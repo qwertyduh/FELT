@@ -1,0 +1,492 @@
+/* ============================================================
+   FELT — Design Tokens & Global Styles
+   Brand: dark felt green · warm gold · cream · mono type
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+/* ── Tokens ─────────────────────────────────────────────── */
+:root {
+  /* Surface */
+  --felt:          #0a2e1a;   /* page background — deep table green */
+  --felt-mid:      #0d3d22;   /* subtle raised surface */
+  --felt-raised:   #112d1a;   /* cards, panels */
+  --felt-overlay:  #161612;   /* modal / card backgrounds */
+
+  /* Gold */
+  --gold:          #c9a84c;   /* primary accent */
+  --gold-light:    #e8c87a;   /* hover states, highlights */
+  --gold-dim:      rgba(201, 168, 76, 0.18);   /* borders */
+  --gold-glow:     rgba(201, 168, 76, 0.10);   /* focus rings, glows */
+
+  /* Text */
+  --cream:         #f5f0e8;   /* primary text */
+  --ash:           #8a9ba8;   /* muted / label text */
+  --ash-dim:       rgba(138, 155, 168, 0.5);
+
+  /* State */
+  --danger:        #e05252;
+  --danger-bg:     rgba(224, 82, 82, 0.12);
+  --danger-border: rgba(224, 82, 82, 0.30);
+  --success:       #4caf7d;
+  --success-bg:    rgba(76, 175, 125, 0.12);
+
+  /* Suits */
+  --suit-red:      #e05252;
+  --suit-black:    var(--cream);
+
+  /* Chip colours */
+  --chip-white:    #e8e8e0;
+  --chip-red:      #e05252;
+  --chip-blue:     #4a7fc1;
+  --chip-green:    #4caf7d;
+  --chip-black:    #2a2a28;
+
+  /* Typography */
+  --font-serif:    'Playfair Display', Georgia, serif;
+  --font-sans:     'DM Sans', system-ui, sans-serif;
+  --font-mono:     'DM Mono', 'Courier New', monospace;
+
+  /* Radius */
+  --r-sm:   6px;
+  --r-md:   10px;
+  --r-lg:   16px;
+  --r-xl:   24px;
+  --r-pill: 999px;
+
+  /* Shadow */
+  --shadow-card:  0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04) inset;
+  --shadow-sm:    0 4px 12px rgba(0,0,0,0.4);
+  --shadow-gold:  0 0 24px rgba(201,168,76,0.15);
+
+  /* Transition */
+  --t-fast:   0.15s ease;
+  --t-base:   0.25s ease;
+  --t-slow:   0.4s ease;
+}
+
+/* ── Reset ───────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Base ────────────────────────────────────────────────── */
+body {
+  background: var(--felt);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-sans);
+  color: var(--cream);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Felt texture overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 2px,
+      rgba(255,255,255,0.012) 2px,
+      rgba(255,255,255,0.012) 4px
+    );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Ambient gold glow */
+body::after {
+  content: '';
+  position: fixed;
+  width: 700px;
+  height: 700px;
+  background: radial-gradient(circle, rgba(201,168,76,0.07) 0%, transparent 70%);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Layout ──────────────────────────────────────────────── */
+.container {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 440px;
+  padding: 24px 20px;
+}
+
+/* ── Logo / Brand Mark ───────────────────────────────────── */
+.logo {
+  text-align: center;
+  margin-bottom: 44px;
+  animation: fadeDown 0.6s ease both;
+}
+
+.logo-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-icon {
+  width: 42px;
+  height: 42px;
+  background: linear-gradient(135deg, var(--gold), #b8932e);
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  transform: rotate(-5deg);
+  box-shadow: var(--shadow-gold);
+}
+
+.logo-text {
+  font-family: var(--font-serif);
+  font-size: 2.6rem;
+  font-weight: 900;
+  color: var(--cream);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.logo-tagline {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.3em;
+  color: var(--ash);
+  text-transform: uppercase;
+}
+
+/* ── Card Panel ──────────────────────────────────────────── */
+.card {
+  background: linear-gradient(145deg, #161612, #1a1a15);
+  border: 1px solid var(--gold-dim);
+  border-radius: var(--r-lg);
+  padding: 36px 32px;
+  box-shadow: var(--shadow-card);
+  animation: fadeUp 0.6s 0.2s ease both;
+}
+
+.card-title {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  color: var(--gold);
+  margin-bottom: 26px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  letter-spacing: 0.05em;
+}
+
+.card-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--gold-dim);
+}
+
+/* ── Form Elements ───────────────────────────────────────── */
+.field {
+  margin-bottom: 18px;
+}
+
+label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.22em;
+  color: var(--ash);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"] {
+  width: 100%;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: var(--r-md);
+  padding: 13px 16px;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  color: var(--cream);
+  outline: none;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+
+input::placeholder {
+  color: rgba(255,255,255,0.18);
+}
+
+input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}
+
+/* ── Buttons ─────────────────────────────────────────────── */
+.btn-primary {
+  width: 100%;
+  background: linear-gradient(135deg, var(--gold), #b8932e);
+  border: none;
+  border-radius: var(--r-md);
+  padding: 14px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #12120f;
+  cursor: pointer;
+  transition: opacity var(--t-fast), transform var(--t-fast), box-shadow var(--t-fast);
+  margin-top: 8px;
+}
+
+.btn-primary:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(201,168,76,0.25);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--gold-dim);
+  border-radius: var(--r-md);
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--gold);
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast);
+}
+
+.btn-ghost:hover {
+  background: var(--gold-glow);
+  border-color: var(--gold);
+}
+
+/* Game action buttons */
+.btn-fold   { --action-color: var(--ash); }
+.btn-check  { --action-color: var(--success); }
+.btn-call   { --action-color: #4a7fc1; }
+.btn-raise  { --action-color: var(--gold); }
+
+.btn-action {
+  background: rgba(var(--action-color), 0.08);
+  border: 1px solid var(--action-color);
+  border-radius: var(--r-md);
+  padding: 10px 20px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--action-color);
+  cursor: pointer;
+  transition: background var(--t-fast), transform var(--t-fast);
+}
+
+.btn-action:hover {
+  background: rgba(var(--action-color), 0.18);
+  transform: translateY(-2px);
+}
+
+/* ── Feedback ────────────────────────────────────────────── */
+.error-msg {
+  display: none;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--r-sm);
+  padding: 10px 14px;
+  font-size: 0.78rem;
+  color: var(--danger);
+  margin-bottom: 16px;
+  font-family: var(--font-mono);
+}
+
+.error-msg.show { display: block; }
+
+.success-msg {
+  display: none;
+  background: var(--success-bg);
+  border: 1px solid rgba(76,175,125,0.3);
+  border-radius: var(--r-sm);
+  padding: 10px 14px;
+  font-size: 0.78rem;
+  color: var(--success);
+  margin-bottom: 16px;
+  font-family: var(--font-mono);
+}
+
+.success-msg.show { display: block; }
+
+/* ── Divider ─────────────────────────────────────────────── */
+.divider {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  color: rgba(255,255,255,0.14);
+  letter-spacing: 0.22em;
+  margin: 22px 0;
+  position: relative;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 38%;
+  height: 1px;
+  background: rgba(255,255,255,0.07);
+}
+
+.divider::before { left: 0; }
+.divider::after  { right: 0; }
+
+/* ── Suit Row ────────────────────────────────────────────── */
+.suit-row {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 28px;
+}
+
+.suit {
+  font-size: 1.2rem;
+  opacity: 0.25;
+  cursor: default;
+  display: inline-block;
+  transition: opacity var(--t-base), transform var(--t-base), text-shadow var(--t-base);
+}
+
+.suit:hover {
+  opacity: 1;
+  transform: translateY(-5px) scale(1.3);
+}
+
+/* Spades & Clubs — gold on hover */
+.suit:nth-child(1):hover,
+.suit:nth-child(3):hover {
+  color: var(--gold-light);
+  text-shadow: 0 0 14px rgba(232, 200, 122, 0.5);
+}
+
+/* Hearts & Diamonds — red on hover */
+.suit:nth-child(2):hover,
+.suit:nth-child(4):hover {
+  color: var(--danger);
+  text-shadow: 0 0 14px rgba(224, 82, 82, 0.5);
+}
+
+/* ── Playing Card ────────────────────────────────────────── */
+.playing-card {
+  width: 60px;
+  height: 88px;
+  background: var(--cream);
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-serif);
+  font-size: 1.4rem;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  user-select: none;
+}
+
+.playing-card.red  { color: var(--suit-red); }
+.playing-card.black { color: #1a1a15; }
+
+.playing-card.face-down {
+  background: linear-gradient(135deg, #1e3a2a, #0a2e1a);
+  border: 1px solid var(--gold-dim);
+}
+
+.playing-card.face-down::after {
+  content: '🂠';
+  font-size: 2rem;
+  opacity: 0.3;
+}
+
+/* ── Chip ────────────────────────────────────────────────── */
+.chip {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 3px dashed rgba(255,255,255,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+
+.chip.white { background: var(--chip-white); color: #1a1a15; }
+.chip.red   { background: var(--chip-red);   color: var(--cream); }
+.chip.blue  { background: var(--chip-blue);  color: var(--cream); }
+.chip.green { background: var(--chip-green); color: var(--cream); }
+.chip.black { background: var(--chip-black); color: var(--cream); }
+
+/* ── Animations ──────────────────────────────────────────── */
+@keyframes fadeDown {
+  from { opacity: 0; transform: translateY(-16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes dealCard {
+  from { opacity: 0; transform: translateY(-40px) rotate(-8deg); }
+  to   { opacity: 1; transform: translateY(0) rotate(0deg); }
+}
+
+@keyframes chipPulse {
+  0%, 100% { box-shadow: 0 3px 8px rgba(0,0,0,0.5), 0 0 0 0 var(--gold-glow); }
+  50%       { box-shadow: 0 3px 8px rgba(0,0,0,0.5), 0 0 0 8px transparent; }
+}
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .card {
+    padding: 28px 20px;
+  }
+
+  .logo-text {
+    font-size: 2.2rem;
+  }
+
+  .container {
+    padding: 16px;
+  }
+}

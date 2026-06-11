@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # --- BACKEND SERVICE (Fastify) ---
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - REDIS_URL=redis://redis:6379
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    networks:
+      - felt-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # --- FRONTEND SERVICE (Vite + React) ---
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:3000
+    env_file:
+      - .env
+    networks:
+      - felt-network
+
+  # --- REDIS SERVICE ---
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - felt-network
+
+networks:
+  felt-network:
+    driver: bridge
+
+volumes:
+  redis_data:
