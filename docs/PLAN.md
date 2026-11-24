@@ -58,15 +58,16 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · 👤 needs the owner 
 - **Done when:** a `fastify.inject` test for `/health` → 200 passes; the server boots with `npm run dev -w apps/server`.
 - _Note: Tester GO on round 1. Built with tsup (`noExternal: /^@felt\//`), and bundling of workspace packages was proven by the tester. `NODE_ENV` defaults to development, so the Dockerfile must set production. Port 3000 is taken by another local process on the dev machine._
 
-### 🟨 P04 · Docker Compose + Redis
+### ✅ P04 · Docker Compose + Redis
 - **Needs:** P03
 - **Do:** `apps/server/Dockerfile` (multi-stage), `docker-compose.yml` with `server` + `redis:7-alpine`. Add a Redis client in `config/redis.ts`. `/health` reports Redis status. Carried over from P03's tester:
   - (a) Fix log redaction. The default `req` serializer drops headers, so the current redact paths never apply. Use redact paths that cover any logged `headers.authorization` / `headers.cookie` (e.g. `*.headers.authorization`), plus a test that logs a headers object and asserts the values are censored.
   - (b) Load the root `.env` in dev (`tsx watch --env-file-if-exists=../../.env`), so the root `npm run dev` works without exporting vars.
   - (c) Make the dev server port configurable, because local port 3000 may be taken.
-- **Done when:** `docker compose up` runs both services and `curl :3000/health` shows `redis: "ok"`.
+- **Done when:** `docker compose up` runs both services and `curl :3001/health` shows `redis: "ok"`.
+- _Note: Tester GO on round 1. The server's host port is `${SERVER_PORT:-3001}`. `/health` returns 200 with `redis: ok|down`. The image is 271MB, non-root, with no env or test files. On the dev machine, ports 3000 and 6379 are already used by other local processes, so override `SERVER_PORT`/`REDIS_PORT` if needed._
 
-### ⬜ P05 · CI
+### 🟨 P05 · CI
 - **Needs:** P01
 - **Do:** GitHub Actions workflow running `npm ci`, typecheck, lint and a production build on push/PR. Tests aren't pushed, so CI doesn't run them; they run locally before every commit.
 - **Done when:** the first run on GitHub is green.
@@ -88,7 +89,7 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · 👤 needs the owner 
 
 ### ⬜ P09 · Server JWT auth
 - **Needs:** P03, P06
-- **Do:** Fastify `onRequest` auth hook that verifies the Supabase JWT via JWKS (cached) and sets `request.user = { userId, isAnonymous }`. Add `GET /me`.
+- **Do:** Fastify `onRequest` auth hook that verifies the Supabase JWT via JWKS (cached) and sets `request.user = { userId, isAnonymous }`. Add `GET /me`. Widen log redaction to any new secret-bearing headers or fields (`proxy-authorization`, `x-api-key`, tokens in bodies), and add tests for them.
 - **Done when:** tests with locally signed tokens cover valid, expired, wrong-issuer and missing-token cases.
 
 ### ⬜ P10 · Username endpoints

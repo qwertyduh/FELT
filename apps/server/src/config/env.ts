@@ -26,9 +26,13 @@ const originList = z
   );
 
 export const envSchema = z.object({
+  // Dev: `PORT=3001 npm run dev` runs the server on another port if 3000 is taken.
   PORT: z.coerce.number().int().min(0).max(65535).default(3000),
   HOST: z.string().min(1).default('0.0.0.0'),
   WEB_ORIGIN: originList,
+  REDIS_URL: z
+    .string({ error: 'is required in production (e.g. redis://host:6379)' })
+    .refine((v) => /^rediss?:\/\/\S+$/.test(v), 'must be a redis:// or rediss:// URL'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
@@ -43,9 +47,17 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
     const value = source[key];
     cleaned[key] = value === undefined || value.trim() === '' ? undefined : value;
   }
+  // Dev conveniences: the schema stays strict, so production still requires both values.
+  // An invalid NODE_ENV falls through untouched and is reported by the schema.
+  const nodeEnv = cleaned.NODE_ENV ?? 'development';
+  if (nodeEnv === 'development') cleaned.WEB_ORIGIN ??= 'http://localhost:5173';
+  if (nodeEnv === 'development' || nodeEnv === 'test')
+    cleaned.REDIS_URL ??= 'redis://localhost:6379';
   const result = envSchema.safeParse(cleaned);
   if (!result.success) {
-    const lines = result.error.issues.map((issue) => `  - ${issue.path.join('.') || '(root)'}: ${issue.message}`);
+    const lines = result.error.issues.map(
+      (issue) => `  - ${issue.path.join('.') || '(root)'}: ${issue.message}`,
+    );
     throw new Error(`Invalid environment configuration:\n${lines.join('\n')}`);
   }
   return result.data;
