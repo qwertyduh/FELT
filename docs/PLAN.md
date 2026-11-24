@@ -91,18 +91,19 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests pass for plain, leetspeak (`sh1t`), repeated-character, mixed-case and confusable cases, plus false-positive guards (e.g. `scunthorpe`, `classic`, `bass`).
 - _Note: GO on round 2. Round 1 failed on false positives (cockpit, cumin, retardant…) and missed slur spellings. Fixed with a whitelist, extra patterns, and a whole-token regex for spic/coon/paki/kys. Separator-split words still pass `censor` (accepted gap)._
 
-### ⬜ P08b · Profanity hardening (follow-up from P08 tester)
+### ✅ P08b · Profanity hardening (follow-up from P08 tester)
 - **Needs:** P08
 - **Do:** Close the gaps that come from the stock obscenity dataset:
   - (a) `<word ending in s>` + n-word passes (`classnigger`, `bossnigger`) because it reads as "snigger". Flag the n-word even when it follows an `s`, while `snigger`/`sniggering` alone still pass.
   - (b) Compound mild profanity passes: `big_wanker`, `bigwanker`, `big_cock`, `fatcock`, `xxcockxx`, `suck_cock`, `butthole`, `butt_hole`, `cvnt`. Flag these without re-breaking cockpit/cocktail/peacock/Hancock/Cockburn/cocoon.
-  - (c) Whitelist place names and surnames: `fukushima`, `fukuoka`, `fukui`, `cummings`, `dickerson`.
+  - (c) Whitelist `cummings` only. Owner decision: `fukushima`, `fukuoka`, `fukui` and `dickerson` stay BLOCKED; wrongly blocked players use the appeal message (P12).
   - (d) Remove the redundant whitelist entries (`wang`, `butts`, `kuntz`, `fuchs`, `penistone`) if stock obscenity doesn't flag them, and keep tests pinning that they pass.
   - (e) Add tests for the `jackass`/`smartass`/`fatass` patterns so mutations are caught.
 - **Done when:** all of the above are covered by `it.each` cases in both directions; the round-2 false-positive sweep (300+ clean names) still passes; mutation of each new rule fails a test.
+- _Note: GO on round 1. `cock` is blocked unless it sits inside an allowlisted word (`COCK_WORDS`). Accepted over-blocks under the owner's policy: cocky, cockscomb, some cock-surnames (Laycock, Hiscock…), Cummins, `the_snigger`. Candidates to add to `COCK_WORDS` if users appeal._
 
 
-### ⬜ P09 · Server JWT auth
+### 🟨 P09 · Server JWT auth
 - **Needs:** P03, P06
 - **Do:** Fastify `onRequest` auth hook that verifies the Supabase JWT via JWKS (cached) and sets `request.user = { userId, isAnonymous }`. Add `GET /me`. Widen log redaction to any new secret-bearing headers or fields (`proxy-authorization`, `x-api-key`, tokens in bodies), and add tests for them.
 - **Done when:** tests with locally signed tokens cover valid, expired, wrong-issuer and missing-token cases.
@@ -119,8 +120,8 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 
 ### ⬜ P12 · Username onboarding UI
 - **Needs:** P10, P11
-- **Do:** `/onboarding`: a username input with instant format feedback (shared schema), a debounced availability check and the submit flow. Redirect any user without a username here.
-- **Done when:** a Playwright test covers a taken name, a profane name, a valid claim and the redirect.
+- **Do:** `/onboarding`: a username input with instant format feedback (shared schema), a debounced availability check and the submit flow. Redirect any user without a username here. When the server rejects a name as `profane`, show a small popup: "Think your name was blocked by mistake? Tag us on social media and we'll set up your account personally." The handle comes from one config constant (`SOCIAL_HANDLE`, placeholder until the owner provides it).
+- **Done when:** a Playwright test covers a taken name, a profane name (with the appeal popup), a valid claim and the redirect.
 
 ### ⬜ P13 · Deploy skeleton 👤
 - **Needs:** P04, P11

@@ -3,6 +3,7 @@ import {
   type MatchPayload,
   englishDataset,
   englishRecommendedTransformers,
+  parseRawPattern,
   pattern,
   RegExpMatcher,
   TextCensor,
@@ -19,8 +20,10 @@ import { normalizeUsername } from '@felt/protocol';
 // Dataset adjustments on top of obscenity's English dataset (all local). Whitelisting is
 // substring based: a match lying entirely inside a whitelisted term is ignored.
 //  - Whitelisted common words / names the stock dataset flags: cockpit, cocksure, cumin,
-//    retardant, shiitake, rapeseed, mishit, penistone, peniston, dickson, dickinson, fagin,
-//    butts, kuntz, fuchs, wang. (Hancock, Cockburn, dickens, shitake already pass.)
+//    retardant, shiitake, rapeseed, mishit, peniston, dickson, dickinson, fagin,
+//    wankel, cummings (owner decision: `cummings`, `cummings_fan`, `dominic_cummings` pass).
+//    (Hancock, Cockburn, dickens, shitake, wang, butts, kuntz, fuchs pass on the stock dataset
+//    so are not listed; `penistone` passes because the substring `peniston` is whitelisted.)
 //  - Blacklisted `dumbass`, `jackass`, `smartass`, `fatass`: obscenity's `ass` patterns need
 //    a word boundary, so these compounds slip through. Whole compounds, so `assassin`,
 //    `bass`, `class` are unaffected.
@@ -34,25 +37,84 @@ import { normalizeUsername } from '@felt/protocol';
 //    `xx_kys_xx`, `kys99` flag while `raccoon`, `spicy`, `pakistan`, `skyscraper`, `kysa`
 //    do not. `coonhound` and `paki_chef` do flag (coonhound documented, acceptable).
 //
+//  - `snigger` hole: the stock dataset whitelists `snigger`, so `classnigger` / `bossnigger`
+//    read as "class" + "snigger" and passed. We blacklist `<letter>snigger` (26 patterns, any
+//    letter a-z). A match like `ssnigger` extends beyond the whitelisted `snigger`, so it is not
+//    ignored. `snigger`, `sniggering`, `sniggers`, `snigger_bob` have no letter directly before
+//    the `s` and still pass. Leet works (`bossn1gger`), as the patterns go through the same
+//    transformers. Edge: `the_snigger` / `bob_snigger` are flagged by the separator-stripped
+//    check (`thesnigger`), because they are indistinguishable from `thesnigger` there.
+//  - Compound mild profanity, as unbounded patterns (no word boundary): `wanker`, `buthole`,
+//    `cvnt`, `cock`. `big_wanker`, `bigwanker`, `butt_hole`, `c_v_n_t` (via the stripped
+//    variants) and `xxcockxx`, `fatcock`, `big_cock`, `suck_cock` now flag. Because `cock` has
+//    no boundary, clean words containing it are protected by COCK_WORDS (whitelist, matched
+//    as lowercase substrings): cockpit, cocktail, peacock, Hancock, Cockburn, cockney,
+//    cockroach, shuttlecock, woodcock, ... Rule: a name containing `cock` is blocked unless
+//    every `cock` lies inside one of those words. Edges: a clean word NOT listed (e.g. a rare
+//    surname such as `Cockshott`) is blocked, and a listed word with a separator inside it
+//    (`pea_cock`, `wood_cock`) is blocked, since `_` breaks the substring. `bigpeacock` passes
+//    (the `cock` sits in `peacock`). `wanker` and `butthole` have no known clean host word.
+//    `wankel` (the engine) is whitelisted; `swank` and `scuttlebutt` never matched.
+//
 // Known, intentional over-blocking for usernames (not whitelisted): dick, dick_smith,
 // dikshit, shitole, shitzu, Bitchfield, Shitterton, Twatt, Dicklebury, ass_ist, pen15.
-const WHITELIST = [
+// Clean words containing `cock` (see the header comment). The stock dataset already lets
+// `cockney` through; every word below is needed (tests pin each one).
+const COCK_WORDS = [
   'cockpit',
   'cocksure',
+  'cocktail',
+  'cockatoo',
+  'cockatiel',
+  'cockapoo',
+  'cockroach',
+  'cockerel',
+  'cockerill',
+  'cockermouth',
+  'cockfosters',
+  'cockburn',
+  'cockcroft',
+  'cockayne',
+  'cockrell',
+  'cockle',
+  'cockspur',
+  'cockade',
+  'cockamamie',
+  'cockeyed',
+  'peacock',
+  'hancock',
+  'shuttlecock',
+  'woodcock',
+  'weathercock',
+  'hitchcock',
+  'babcock',
+  'poppycock',
+  'gamecock',
+  'stopcock',
+  'ballcock',
+  'petcock',
+  'haycock',
+  'alcock',
+  'pocock',
+  'wilcock',
+  'willcock',
+  'maycock',
+  'adcock',
+];
+
+const WHITELIST = [
   'cumin',
   'retardant',
   'shiitake',
   'rapeseed',
   'mishit',
-  'penistone',
   'peniston',
   'dickson',
   'dickinson',
   'fagin',
-  'butts',
-  'kuntz',
-  'fuchs',
-  'wang',
+  'wankel',
+  'cummings',
+  ...COCK_WORDS,
 ];
 
 const dataset = new DataSet()
@@ -68,6 +130,21 @@ const dataset = new DataSet()
       .addPattern(pattern`jackass`)
       .addPattern(pattern`smartass`)
       .addPattern(pattern`fatass`),
+  )
+  .addPhrase((phrase) => {
+    // `<letter>snigger`: see the header comment.
+    for (const letter of 'abcdefghijklmnopqrstuvwxyz') {
+      phrase.addPattern(parseRawPattern(`${letter}snigger`));
+    }
+    return phrase.setMetadata({ originalWord: 'snigger-prefixed' });
+  })
+  .addPhrase((phrase) =>
+    phrase
+      .setMetadata({ originalWord: 'compound-mild' })
+      .addPattern(pattern`wanker`)
+      .addPattern(pattern`buthole`)
+      .addPattern(pattern`cvnt`)
+      .addPattern(pattern`cock`),
   )
   .addPhrase((phrase) =>
     phrase

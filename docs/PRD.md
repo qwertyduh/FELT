@@ -86,6 +86,7 @@ Chips exist only for the length of a game. The host sets a minimum buy-in and ap
   - Unique, case-insensitive (`Pranay` and `pranay` collide).
   - Rejected if profane, including obfuscated spellings (`a$$`, `sh1t`, spacing tricks), or if reserved (`admin`, `host`, `felt`, `support`, `guest`…).
   - Availability is checked live while typing and checked again on submit, so two people can't grab the same name at once.
+  - The filter errs on the side of blocking. When a name is rejected as profane, a small popup says: "Think your name was blocked by mistake? Tag us on social media and we'll set up your account personally." The owner creates those accounts manually.
 - Clearing browser data loses the guest account; the player then picks a new username. Account recovery comes with Google sign-in later.
 - Profile = username + initials avatar. Nothing else is stored in v1.
 
