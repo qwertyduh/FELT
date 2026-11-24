@@ -45,6 +45,14 @@ export const envSchema = z
     // Dev: `PORT=3001 npm run dev` runs the server on another port if 3000 is taken.
     PORT: z.coerce.number().int().min(0).max(65535).default(3000),
     HOST: z.string().min(1).default('0.0.0.0'),
+    /**
+     * Trust X-Forwarded-For (needed for correct `request.ip` and per-IP rate limits behind
+     * Railway's proxy). Defaults to true in production only; set TRUST_PROXY=false to disable.
+     */
+    TRUST_PROXY: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v === 'true')),
     WEB_ORIGIN: originList,
     REDIS_URL: z
       .string({ error: 'is required in production (e.g. redis://host:6379)' })
@@ -71,7 +79,10 @@ export const envSchema = z
 
 type ParsedEnv = z.infer<typeof envSchema>;
 /** Validated config; `SUPABASE_JWKS_URL` is always resolved. */
-export type Env = Omit<ParsedEnv, 'SUPABASE_JWKS_URL'> & { SUPABASE_JWKS_URL: string };
+export type Env = Omit<ParsedEnv, 'SUPABASE_JWKS_URL' | 'TRUST_PROXY'> & {
+  SUPABASE_JWKS_URL: string;
+  TRUST_PROXY: boolean;
+};
 
 /** Parse and validate environment variables. Throws one error listing every problem. */
 export function loadEnv(source: Record<string, string | undefined> = process.env): Env {
@@ -96,7 +107,10 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
     );
     throw new Error(`Invalid environment configuration:\n${lines.join('\n')}`);
   }
-  const data = result.data;
+  const data = {
+    ...result.data,
+    TRUST_PROXY: result.data.TRUST_PROXY ?? result.data.NODE_ENV === 'production',
+  };
   const jwksUrl = data.SUPABASE_JWKS_URL ?? `${data.SUPABASE_URL}/auth/v1/.well-known/jwks.json`;
   // Signing keys fetched over plain http could be swapped by a network attacker.
   if (data.NODE_ENV === 'production' && !jwksUrl.startsWith('https://')) {

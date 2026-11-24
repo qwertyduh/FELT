@@ -143,10 +143,12 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - _Note: GO on round 1. `npm run e2e` runs the Playwright test (starts web + server itself; needs local Supabase and Redis on 6380). `SOCIAL_HANDLE` in `apps/web/src/config.ts` is a placeholder until the owner supplies it. Theme tokens (`felt-*`, `cream`, `brass`, `chip-*`) live in `index.css`.
   - Follow-ups (non-blocking): carry a `returnTo` through onboarding so a deep link like `/r/ABC` survives (do it in P36, join flow). Appeal popup: Esc stops working after clicking its body text, and focus returns to `<body>` after a submit-triggered open. The placeholder text contrast is 2.46:1. The `already_set` path can leave the button stuck on "Claiming…" if the `/me` refresh fails._
 
-### ⬜ P13 · Deploy skeleton 👤
+### ✅ P13 · Deploy skeleton 👤
 - **Needs:** P04, P11
 - **Do:** 👤 The owner runs `railway login` and `vercel login`. Create a Railway project with the server service (Dockerfile) and Railway Redis, a Vercel project for `apps/web`, and the production Supabase project. Set the env vars from ARCHITECTURE §12.
 - **Done when:** the production web URL loads, anonymous sign-in + username claim work, and the production `/health` reports Redis ok.
+- _Note: GO on round 1. Web https://felt-rosy-sigma.vercel.app, server https://server-production-1b135132.up.railway.app, Supabase project `felt` (ap-south-1). See `docs/DEPLOY.md`.
+  - Follow-ups: `railway.json` is deprecated and works until 2026-12-01, so run `railway config migrate` before then. The server uses the legacy `service_role` key, because the new `sb_secret_` key returned 401, so revisit this before Supabase retires legacy keys. Add security headers (helmet) on the server. Move rate limits to Redis before running more than one replica. Two stray anonymous users from smoke tests remain in prod._
 
 ---
 

@@ -57,5 +57,7 @@ docs/             PRD and architecture
 - **Redis:** Railway Redis
 - **Auth & DB:** Supabase
 
+URLs, redeploy commands and env var names: [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## License
 TBD

@@ -148,7 +148,10 @@ function loggerOptions(
 }
 
 export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance> {
-  const app = Fastify({ logger: loggerOptions(env, deps.logStream) });
+  const app = Fastify({
+    logger: loggerOptions(env, deps.logStream),
+    trustProxy: env.TRUST_PROXY,
+  });
 
   await app.register(cors, { origin: env.WEB_ORIGIN });
   const verify = createVerifier({
