@@ -67,10 +67,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · 👤 needs the owner 
 - **Done when:** `docker compose up` runs both services and `curl :3001/health` shows `redis: "ok"`.
 - _Note: Tester GO on round 1. The server's host port is `${SERVER_PORT:-3001}`. `/health` returns 200 with `redis: ok|down`. The image is 271MB, non-root, with no env or test files. On the dev machine, ports 3000 and 6379 are already used by other local processes, so override `SERVER_PORT`/`REDIS_PORT` if needed._
 
-### 🟨 P05 · CI
+### ✅ P05 · CI
 - **Needs:** P01
 - **Do:** GitHub Actions workflow running `npm ci`, typecheck, lint and a production build on push/PR. Tests aren't pushed, so CI doesn't run them; they run locally before every commit.
 - **Done when:** the first run on GitHub is green.
+- _Note: Tester GO on round 1. Two jobs: `verify` (ci, typecheck, lint, format, builds) and `docker` (image build). Uses checkout/setup-node v7. A clean-checkout run in a linux container also passed._
 
 ### ⬜ P06 · Supabase schema 👤
 - **Needs:** P01
