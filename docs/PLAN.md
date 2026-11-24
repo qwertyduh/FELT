@@ -220,10 +220,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests for a valid award, an ineligible winner rejected, and a split award.
 - _Note: GO round 1. `awardPot` in award.ts, reached through `applyHostAction({type:'award_pot'})`; `splitPot` is shared with P23. The host awards every pot explicitly, in any order. Winnings go to stacks immediately, tracked by awardedPotIds/pendingAwards, so conservation is sum(stacks) + unawarded pot amounts. A single-eligible pot only accepts that player: the UI should pre-fill it. Non-blocking: no test for a folded id listed in eligible (the guard exists); a player id of '__proto__' breaks the amounts maps (use Object.hasOwn or null-prototype maps if ids ever stop being UUIDs)._
 
-### ⬜ P25 · Chip conservation property test
+### ✅ P25 · Chip conservation property test
 - **Needs:** P23, P24
 - **Do:** fast-check: random tables and random legal action sequences; assert total chips are constant and no stack goes negative.
 - **Done when:** 1,000+ runs pass in CI time (< 10s).
+- _Note: GO on round 2 (test-only changes, verified by mutation re-run). `packages/engine/src/conservation.test.ts` has fast-check properties at 1000 runs each: online, hybrid, determinism with a JSON round-trip, 20-hand multi-hand, and a coverage guard. The file takes about 4.5s. Round 1 found a starved generator (hybrid odd chips never reached); fixed with size 'max' and larger tables. Follow-ups: no test for awarding a pot to a folded player listed in eligible, or for a hybrid award giving the whole pot to the first winner (P24 survivors); the property can't catch non-quantity bugs, which other suites cover._
 
 ---
 
