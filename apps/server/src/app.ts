@@ -13,6 +13,8 @@ import { createRemoteKeySet, createVerifier, issuerFor, type KeySet } from './au
 import { isPlainObject, sanitizeLogObject, sanitizeValue } from './logging/sanitize';
 import { registerHealth } from './http/health';
 import { registerMe } from './http/me';
+import { createDbFromEnv, type Db } from './db/supabase';
+import { registerUsernameRoutes } from './usernames/routes';
 
 function hasPinoPretty(): boolean {
   try {
@@ -29,6 +31,11 @@ export interface AppDeps {
   logStream?: { write(msg: string): void };
   /** JWT key source; tests inject a local JWKS. Defaults to the remote, cached `SUPABASE_JWKS_URL`. */
   keySet?: KeySet;
+  /**
+   * Service-role database client. Omitted: built from `SUPABASE_SERVICE_ROLE_KEY` when set.
+   * `null` (or no key): `/me` and the username routes answer 503 `db_unavailable`.
+   */
+  db?: Db | null;
 }
 
 /**
@@ -38,11 +45,27 @@ export interface AppDeps {
  */
 const LOG_ERROR_MARKER = { logSanitizeError: true };
 
+/**
+ * Error fields never logged. `rawPacket` (e.g. on ioredis/parser errors) carries raw request or
+ * response bytes, which can include tokens; at trace level it would reach the logs.
+ */
+const DROPPED_ERROR_KEYS: ReadonlySet<string> = new Set(['rawPacket']);
+
+/** Removes the keys at any depth of an already-sanitised (plain, acyclic, depth-capped) tree. */
+function dropKeys(value: unknown, keys: ReadonlySet<string>): unknown {
+  if (Array.isArray(value)) return value.map((v) => dropKeys(v, keys));
+  if (typeof value !== 'object' || value === null || !isPlainObject(value)) return value;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) if (!keys.has(k)) out[k] = dropKeys(v, keys);
+  return out;
+}
+
 export function errSerializer(e: unknown): unknown {
   try {
     const out: unknown = stdSerializers.err(e as Error);
     // Strings (`{ err: err.message }`), numbers, null etc. pass through verbatim.
-    return typeof out === 'object' && out !== null ? sanitizeValue(out) : out;
+    if (typeof out !== 'object' || out === null) return out;
+    return dropKeys(sanitizeValue(out), DROPPED_ERROR_KEYS);
   } catch {
     return LOG_ERROR_MARKER;
   }
@@ -134,7 +157,9 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
   });
   registerAuth(app, verify); // after CORS (preflight is answered first); default-deny from here on
   registerHealth(app, deps.redis);
-  registerMe(app);
+  const db = deps.db !== undefined ? deps.db : createDbFromEnv(env);
+  registerMe(app, db);
+  await registerUsernameRoutes(app, db);
 
   // Fastify's default 404 handler logs the full URL (query string included); use the path only.
   // Same body shape as the default. Not-found handlers run unauthenticated: never return data here.

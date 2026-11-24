@@ -40,20 +40,34 @@ const httpUrl = z
     }
   });
 
-export const envSchema = z.object({
-  // Dev: `PORT=3001 npm run dev` runs the server on another port if 3000 is taken.
-  PORT: z.coerce.number().int().min(0).max(65535).default(3000),
-  HOST: z.string().min(1).default('0.0.0.0'),
-  WEB_ORIGIN: originList,
-  REDIS_URL: z
-    .string({ error: 'is required in production (e.g. redis://host:6379)' })
-    .refine((v) => /^rediss?:\/\/\S+$/.test(v), 'must be a redis:// or rediss:// URL'),
-  SUPABASE_URL: httpUrl,
-  /** Optional override; defaults to `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`. */
-  SUPABASE_JWKS_URL: httpUrl.optional(),
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
-});
+export const envSchema = z
+  .object({
+    // Dev: `PORT=3001 npm run dev` runs the server on another port if 3000 is taken.
+    PORT: z.coerce.number().int().min(0).max(65535).default(3000),
+    HOST: z.string().min(1).default('0.0.0.0'),
+    WEB_ORIGIN: originList,
+    REDIS_URL: z
+      .string({ error: 'is required in production (e.g. redis://host:6379)' })
+      .refine((v) => /^rediss?:\/\/\S+$/.test(v), 'must be a redis:// or rediss:// URL'),
+    SUPABASE_URL: httpUrl,
+    /** Optional override; defaults to `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`. */
+    SUPABASE_JWKS_URL: httpUrl.optional(),
+    /** Server-only secret. Required in production; without it the username routes answer 503. */
+    SUPABASE_SERVICE_ROLE_KEY: z.string().trim().min(1).optional(),
+    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    LOG_LEVEL: z
+      .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
+      .default('info'),
+  })
+  .superRefine((env, ctx) => {
+    if (env.NODE_ENV === 'production' && !env.SUPABASE_SERVICE_ROLE_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SUPABASE_SERVICE_ROLE_KEY'],
+        message: 'is required in production',
+      });
+    }
+  });
 
 type ParsedEnv = z.infer<typeof envSchema>;
 /** Validated config; `SUPABASE_JWKS_URL` is always resolved. */

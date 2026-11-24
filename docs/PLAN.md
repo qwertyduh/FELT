@@ -114,10 +114,17 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
   - Logged URLs are path-only.
   - Supabase `jwt_expiry` must stay ≤ 3600._
 
-### ⬜ P10 · Username endpoints
+### ✅ P10 · Username endpoints
 - **Needs:** P07, P08, P09
 - **Do:** (From the P09 tester: drop `err.rawPacket` in `errSerializer`, because at trace level it carries raw request bytes, which may include tokens. Add a test.) (Also from the P09 tester: a JWT stays valid after logout or user deletion until it expires, so never trust `sub` alone. Look up the profile/user and treat a missing row as 401/404.) `GET /usernames/check` and `POST /me/username`, storing and returning the NORMALISED name (`UsernameSchema.parse` output), following the ARCHITECTURE §6 pipeline. Claiming writes with the service role and maps a unique violation to 409. Rate-limit the check endpoint.
 - **Done when:** tests cover every `reason` value, a successful claim, a duplicate claim → 409, and the race (two parallel claims → exactly one 201).
+- _Note: GO on round 2. Round 1 failed on two counts: a username like `profiles_pkey` was misread as "already set", and postgrest retries made a hung DB take 27s. Now constraint names are matched in `message` only, and retries are off with per-query deadlines.
+  - `npm run env:local -w apps/server` writes `apps/server/.env.local` (gitignored) from `supabase status`.
+  - A missing key or DB returns 503 `db_unavailable`.
+  - POST conflicts return 409 `username_taken` or `username_already_set`.
+  - Rate limits are 30/min for check and 10/min for claim, per user, in memory.
+  - Worst-case `/me` for a user without a profile is ~9.5s (two sequential 5s budgets); add a shared deadline if it matters.
+  - For P13: set Fastify `trustProxy` correctly behind Railway, and move rate limits to Redis if the server scales out._
 
 ### ⬜ P11 · Web auth
 - **Needs:** P02, P06

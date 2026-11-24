@@ -7,15 +7,18 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "dev": "tsx watch --env-file-if-exists=../../.env src/server.ts",
+    "dev": "tsx watch --env-file-if-exists=../../.env --env-file-if-exists=.env.local src/server.ts",
+    "env:local": "node scripts/env-local.mjs",
     "build": "tsup",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@fastify/cors": "^11.4.3",
+    "@fastify/rate-limit": "^11.3.0",
     "@felt/engine": "*",
     "@felt/protocol": "*",
+    "@supabase/supabase-js": "^2.119.2",
     "fastify": "^5.12.8",
     "ioredis": "^6.1.0",
     "jose": "^6.2.18",
