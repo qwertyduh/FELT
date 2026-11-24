@@ -1,5 +1,6 @@
 import { firstToActPostflop, isBettingComplete } from './actions';
 import { isCard } from './cards';
+import { settleBets } from './pots';
 import type {
   Card,
   EngineError,
@@ -37,8 +38,9 @@ function fail<T>(code: EngineError['code'], message: string): Result<T> {
  *   holds only the cards the host typed in: omitted `cards` leave it unchanged (so it can be
  *   shorter than the street implies). `cards` must have the street's exact count, be valid,
  *   and not duplicate each other or the board. Advancing river -> showdown takes no cards.
- * - A street's bets stay in `committed` (hand total). `collectBets` is the seam P22 fills to
- *   move street bets into `pots`; for now it only zeroes `bet`.
+ * - A street's bets stay in `committed` (hand total). At each street end `settleBets` (pots.ts)
+ *   returns any uncalled bet and rebuilds `pots` from `committed`, so `pots` is current at
+ *   showdown (online and hybrid) for P23/P24.
  * - Run-out: if fewer than two players can still act (all-in), no betting happens on later
  *   streets; online deals everything straight to 'showdown', hybrid needs one host advance per
  *   street (flop, turn, river, then showdown) with `currentActor` staying null.
@@ -52,9 +54,12 @@ const NEXT: Readonly<Record<string, Street | undefined>> = {
 };
 const CARDS_FOR: Readonly<Record<string, number>> = { flop: 3, turn: 1, river: 1, showdown: 0 };
 
-/** Seam for P22: move this street's bets into pots. Today it only clears `bet`. */
+/**
+ * P22: end-of-street collection. Returns any uncalled bet to its owner, clears street bets and
+ * rebuilds `pots` from `committed` (see pots.ts). State only; use `settleBets` for the events.
+ */
 export function collectBets(state: HandState): HandState {
-  return { ...state, players: state.players.map((p) => ({ ...p, bet: 0 })) };
+  return settleBets(state).state;
 }
 
 /**
@@ -111,9 +116,10 @@ function step(state: HandState, cards: unknown): Result<Transition> {
     if (!v.ok) return v;
     if (v.value !== undefined) board = [...board, ...v.value];
   }
-  const next: HandState = { ...resetForStreet(state, street, board), deck };
+  const settled = settleBets(state); // bet_returned / pots_updated come before street_advanced
+  const next: HandState = { ...resetForStreet(settled.state, street, board), deck };
   const ev: EngineEvent = { type: 'street_advanced', street, board };
-  return { ok: true, value: { state: next, events: [ev] } };
+  return { ok: true, value: { state: next, events: [...settled.events, ev] } };
 }
 
 /** See the module comment. Rejects while betting is open, at showdown/ended, and on wrong mode. */

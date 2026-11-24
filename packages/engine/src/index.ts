@@ -6,3 +6,4 @@ export * from './hand';
 export * from './start-hand';
 export * from './actions';
 export * from './street';
+export * from './pots';

@@ -202,10 +202,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests cover a full hand in both modes, an all-in pre-flop run-out, and a hybrid hand waiting on the host.
 - _Note: GO round 1. New API in street.ts: online `applyAction` auto-advances; hybrid uses `applyHostAction` (one street per advance); `advanceStreet`, `collectBets` (seam for P22), `resetForStreet`. No burn cards. New codes: awaiting_host, betting_incomplete. Server note (P29/P33): if `mode==='online' && currentActor===null` on a live hand (blinds put everyone all-in), call `advanceStreet(state)` once. Consider an exported `needsAdvance(state)` helper. Hybrid board may be shorter than 5 at showdown (host entered no cards): UI/P24 must not assume 5 cards._
 
-### ⬜ P22 · Side pots
+### ✅ P22 · Side pots
 - **Needs:** P20
 - **Do:** `computePots(contributions, folded)` → `{ id, amount, eligible[] }[]`.
 - **Done when:** tests for 2, 3 and 4 all-ins at different sizes, a folded player's chips staying in the pot, and an uncalled bet returned.
+- _Note: GO on round 2 (Opus tester). Round 1's only finding was a missing test, for river betting settling at showdown; added and the mutant now dies. `computePots(contributions, folded)` in pots.ts, plus `settleBets`, which returns uncalled bets (new event `bet_returned`). Verified with 400k synthetic configs against two independent methods and 80k real engine hands. Notes for P23/P24/P25: pots are only rebuilt at street end, so a mid-street fold leaves the folder in `pots[].eligible` until then (read and validate pots at showdown only). `all_in` can have stack > 0 after a bet return. Returned chips are already in the stack. A single-eligible pot is awarded without evaluating hands. The hybrid board can be shorter than 5 cards._
 
 ### ⬜ P23 · Showdown & award (online)
 - **Needs:** P17, P21, P22

@@ -1,4 +1,5 @@
 import type {
+  Pot,
   EngineError,
   EngineEvent,
   HandPlayer,
@@ -9,6 +10,7 @@ import type {
   Transition,
 } from './types';
 import { advanceStreet } from './street';
+import { computePots } from './pots';
 
 function fail<T>(code: EngineError['code'], message: string): Result<T> {
   return { ok: false, error: { code, message } };
@@ -90,35 +92,36 @@ function canRaise(state: HandState, p: HandPlayer): boolean {
 }
 
 /**
- * Seam for P22/P23: settle a hand where everyone else folded. For now the lone winner
- * takes everything committed (including any uncalled excess); P22 will return the uncalled
- * bet and split into pots via computePots.
+ * Settle a hand where everyone else folded (P22). The winner's uncalled excess (over the
+ * second-highest commitment) goes back as a bet_returned; the award is only the contested pot.
+ * Chips move out of `committed` into stacks, so committed is zeroed once the hand has ended.
  */
 function settleUncontested(
   players: readonly HandPlayer[],
   winner: HandPlayer,
-): { players: HandPlayer[]; result: HandResult; total: number } {
-  const total = players.reduce((s, p) => s + p.committed, 0);
-  // Chips move from `committed` into the winner's stack, so committed is zeroed to keep
-  // stack + committed from double counting once the hand has ended.
+): { players: HandPlayer[]; result: HandResult; total: number; returned: number; pots: Pot[] } {
+  const { pots, returned } = computePots(
+    players.map((p) => ({ playerId: p.playerId, committed: p.committed })),
+    players.filter((p) => p.status === 'folded').map((p) => p.playerId),
+  );
+  const back = returned.find((r) => r.playerId === winner.playerId)?.amount ?? 0;
+  const total = players.reduce((s, p) => s + p.committed, 0) - back;
   const out = players.map((p) => ({
     ...p,
     bet: 0,
     committed: 0,
-    stack: p.playerId === winner.playerId ? p.stack + total : p.stack,
+    stack: p.playerId === winner.playerId ? p.stack + total + back : p.stack,
   }));
   const stacks: Record<string, number> = {};
   for (const p of out) stacks[p.playerId] = p.stack;
   return {
     players: out,
     total,
+    returned: back,
+    pots,
     result: {
       awards: [
-        {
-          potId: 'pot-0',
-          winners: [winner.playerId],
-          amounts: { [winner.playerId]: total },
-        },
+        { potId: 'pot-0', winners: [winner.playerId], amounts: { [winner.playerId]: total } },
       ],
       stacks,
     },
@@ -266,6 +269,9 @@ export function applyAction(state: HandState, action: PlayerAction): Result<Tran
   if (sole !== undefined) {
     const settled = settleUncontested(players, sole);
     players = settled.players;
+    if (settled.returned > 0) {
+      events.push({ type: 'bet_returned', playerId: sole.playerId, amount: settled.returned });
+    }
     events.push(
       {
         type: 'pot_awarded',
@@ -275,7 +281,14 @@ export function applyAction(state: HandState, action: PlayerAction): Result<Tran
       },
       { type: 'hand_ended', result: settled.result },
     );
-    next = { ...next, players, street: 'ended', currentActor: null, result: settled.result };
+    next = {
+      ...next,
+      players,
+      pots: settled.pots,
+      street: 'ended',
+      currentActor: null,
+      result: settled.result,
+    };
     return { ok: true, value: { state: next, events } };
   }
 

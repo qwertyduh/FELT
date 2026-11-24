@@ -144,6 +144,8 @@ export type EngineEvent =
     }
   | { type: 'street_advanced'; street: Street; board: readonly Card[] }
   | { type: 'pots_updated'; pots: readonly Pot[] }
+  /** P22: an uncalled bet (excess nobody matched) went back to its owner's stack. */
+  | { type: 'bet_returned'; playerId: string; amount: number }
   | {
       type: 'pot_awarded';
       potId: string;
