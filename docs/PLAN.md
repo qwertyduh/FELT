@@ -208,10 +208,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests for 2, 3 and 4 all-ins at different sizes, a folded player's chips staying in the pot, and an uncalled bet returned.
 - _Note: GO on round 2 (Opus tester). Round 1's only finding was a missing test, for river betting settling at showdown; added and the mutant now dies. `computePots(contributions, folded)` in pots.ts, plus `settleBets`, which returns uncalled bets (new event `bet_returned`). Verified with 400k synthetic configs against two independent methods and 80k real engine hands. Notes for P23/P24/P25: pots are only rebuilt at street end, so a mid-street fold leaves the folder in `pots[].eligible` until then (read and validate pots at showdown only). `all_in` can have stack > 0 after a bet return. Returned chips are already in the stack. A single-eligible pot is awarded without evaluating hands. The hybrid board can be shorter than 5 cards._
 
-### ⬜ P23 · Showdown & award (online)
+### ✅ P23 · Showdown & award (online)
 - **Needs:** P17, P21, P22
 - **Do:** Evaluate each pot's eligible hands, award or split, apply the odd-chip rule, and emit `hand_ended` events.
 - **Done when:** tests for a split main pot with a single-winner side pot, a three-way tie, and odd-chip placement.
+- _Note: GO on round 2 (Opus tester round 1 found test gaps and corrupt-state throws; fixed). `resolveShowdown` in showdown.ts runs automatically in online mode when the hand reaches showdown. Odd chips go clockwise starting left of the button, per pot. Single-eligible pots aren't evaluated. `HandResult.showdown` lists the non-folded players in a pot with 2 or more eligible, so there is no mucking. Verified against 140k independent hands. Notes for P24: hybrid has no hole cards, so don't call bestOf7; reuse the odd-chip order; mirror the final-state contract (street 'ended', committed zeroed). Non-blocking: a few guards lack tests (duplicate player ids, empty eligible list); numeric player fields (stack/seat) aren't validated; a player id of '__proto__' would be dropped from result maps._
 
 ### ⬜ P24 · Hybrid award
 - **Needs:** P22

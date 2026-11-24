@@ -104,12 +104,30 @@ export interface PotAward {
   winners: readonly string[];
   /** Chips won per winner (odd chips already distributed). */
   amounts: Readonly<Record<string, number>>;
+  /** P23 (additive): false when the pot went to its only eligible player without evaluating hands. */
+  contested: boolean;
+  /** P23 (additive): winner playerId -> hand name; empty when not contested. */
+  handNames: Readonly<Record<string, string>>;
+}
+
+/** P23 (additive): a player whose hand was evaluated at showdown (shown to the table). */
+export interface ShowdownEntry {
+  playerId: string;
+  hole: readonly [Card, Card];
+  handName: string;
+  /** HandCategory value (0 high card .. 9 royal flush). */
+  category: number;
 }
 
 export interface HandResult {
   awards: readonly PotAward[];
   /** Final stacks by playerId, to write back to the table. */
   stacks: Readonly<Record<string, number>>;
+  /**
+   * P23 (additive): players whose hands were evaluated (eligible for at least one pot with 2+
+   * eligible players), in seat order. Empty when the hand ended uncontested (everyone folded).
+   */
+  showdown: readonly ShowdownEntry[];
 }
 
 // ---------- Actions ----------
@@ -151,6 +169,9 @@ export type EngineEvent =
       potId: string;
       winners: readonly string[];
       amounts: Readonly<Record<string, number>>;
+      /** P23 (additive): see PotAward. */
+      contested: boolean;
+      handNames: Readonly<Record<string, string>>;
     }
   | { type: 'hand_ended'; result: HandResult };
 

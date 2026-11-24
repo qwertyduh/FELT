@@ -121,9 +121,16 @@ function settleUncontested(
     pots,
     result: {
       awards: [
-        { potId: 'pot-0', winners: [winner.playerId], amounts: { [winner.playerId]: total } },
+        {
+          potId: 'pot-0',
+          winners: [winner.playerId],
+          amounts: { [winner.playerId]: total },
+          contested: false,
+          handNames: {},
+        },
       ],
       stacks,
+      showdown: [],
     },
   };
 }
@@ -278,6 +285,8 @@ export function applyAction(state: HandState, action: PlayerAction): Result<Tran
         potId: 'pot-0',
         winners: [sole.playerId],
         amounts: { [sole.playerId]: settled.total },
+        contested: false,
+        handNames: {},
       },
       { type: 'hand_ended', result: settled.result },
     );

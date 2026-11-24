@@ -1,6 +1,7 @@
 import { firstToActPostflop, isBettingComplete } from './actions';
 import { isCard } from './cards';
 import { settleBets } from './pots';
+import { resolveShowdown } from './showdown';
 import type {
   Card,
   EngineError,
@@ -44,7 +45,8 @@ function fail<T>(code: EngineError['code'], message: string): Result<T> {
  * - Run-out: if fewer than two players can still act (all-in), no betting happens on later
  *   streets; online deals everything straight to 'showdown', hybrid needs one host advance per
  *   street (flop, turn, river, then showdown) with `currentActor` staying null.
- * - After the river's betting the street becomes 'showdown'. Awarding is P23 (online) / P24.
+ * - After the river's betting the street becomes 'showdown'. Online: `advanceStreet` then chains `resolveShowdown` (P23), so the hand ends in the same
+ *   transition. Hybrid stays on 'showdown' for the host's award_pot (P24).
  */
 const NEXT: Readonly<Record<string, Street | undefined>> = {
   preflop: 'flop',
@@ -156,6 +158,15 @@ export function advanceStreet(state: HandState, hostAction?: HostAction): Result
     events.push(...r.value.events);
     // Keep dealing while nobody can bet (all-in run-out) and the hand is not at showdown.
   } while (cur.street !== 'showdown' && cur.currentActor === null);
+  if (cur.street === 'showdown') {
+    // P23: online showdowns resolve in the same transition (hybrid awards via the host, P24).
+    const res = resolveShowdown(cur);
+    if (!res.ok) return res;
+    return {
+      ok: true,
+      value: { state: res.value.state, events: [...events, ...res.value.events] },
+    };
+  }
   return { ok: true, value: { state: cur, events } };
 }
 
