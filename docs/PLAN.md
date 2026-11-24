@@ -196,10 +196,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests for each rule, including the "short all-in doesn't reopen" case and a re-raise after a full raise.
 - _Note: GO on round 2. Added `HandPlayer.facedBet`. Short all-ins don't reopen betting, but cumulative short all-ins summing to a full raise do (TDA). `currentBet` stays bigBlind when the BB is short. P21's street reset must set bets, hasActed, facedBet and currentBet to 0, lastFullRaise to bigBlind, and the actor from firstToActPostflop. Follow-ups: P22 returns the uncalled excess (it is currently inside the pot-0 award); consider clamping `call` to the highest live opponent bet._
 
-### ⬜ P21 · Street progression
+### ✅ P21 · Street progression
 - **Needs:** P20
 - **Do:** Advance flop/turn/river (from the deck in online mode, via `HostAction advance_street` in hybrid), reset the round's bets, and auto run-out when everyone is all-in.
 - **Done when:** tests cover a full hand in both modes, an all-in pre-flop run-out, and a hybrid hand waiting on the host.
+- _Note: GO round 1. New API in street.ts: online `applyAction` auto-advances; hybrid uses `applyHostAction` (one street per advance); `advanceStreet`, `collectBets` (seam for P22), `resetForStreet`. No burn cards. New codes: awaiting_host, betting_incomplete. Server note (P29/P33): if `mode==='online' && currentActor===null` on a live hand (blinds put everyone all-in), call `advanceStreet(state)` once. Consider an exported `needsAdvance(state)` helper. Hybrid board may be shorter than 5 at showdown (host entered no cards): UI/P24 must not assume 5 cards._
 
 ### ⬜ P22 · Side pots
 - **Needs:** P20

@@ -8,6 +8,7 @@ import type {
   Result,
   Transition,
 } from './types';
+import { advanceStreet } from './street';
 
 function fail<T>(code: EngineError['code'], message: string): Result<T> {
   return { ok: false, error: { code, message } };
@@ -47,8 +48,9 @@ function needsAction(state: HandState, p: HandPlayer): boolean {
   return !p.hasActed;
 }
 
-/** True when nobody active still owes an action on this street (leave advancing to P21). */
+/** True when nobody active still owes an action on this street (advancing is street.ts). */
 export function isBettingComplete(state: HandState): boolean {
+  if (!BETTING_STREETS.includes(state.street)) return true; // showdown / ended: nothing to bet
   return !state.players.some((p) => needsAction(state, p));
 }
 
@@ -159,6 +161,9 @@ export function applyAction(state: HandState, action: PlayerAction): Result<Tran
   if (me === undefined) return fail('unknown_player', `unknown player ${action.playerId}`);
   if (!BETTING_STREETS.includes(state.street)) {
     return fail('illegal_action', `no betting on street ${state.street}`);
+  }
+  if (state.currentActor === null && state.mode === 'hybrid' && isBettingComplete(state)) {
+    return fail('awaiting_host', 'betting is complete; waiting for the host to advance the street');
   }
   if (state.currentActor === null || state.currentActor !== me.seat || !isActive(me)) {
     return fail('not_your_turn', `it is not ${me.playerId}'s turn`);
@@ -275,5 +280,15 @@ export function applyAction(state: HandState, action: PlayerAction): Result<Tran
   }
 
   next = { ...next, currentActor: nextToAct(next, me.seat) };
+  // Online: the engine advances (and runs out) streets itself once betting is complete.
+  // Hybrid: stays put with currentActor null until the host sends advance_street.
+  if (next.mode === 'online' && next.currentActor === null) {
+    const adv = advanceStreet(next);
+    if (!adv.ok) return adv;
+    return {
+      ok: true,
+      value: { state: adv.value.state, events: [...events, ...adv.value.events] },
+    };
+  }
   return { ok: true, value: { state: next, events } };
 }

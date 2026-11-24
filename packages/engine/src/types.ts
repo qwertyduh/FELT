@@ -74,7 +74,7 @@ export interface Pot {
 export interface HandState {
   mode: GameMode;
   street: Street;
-  /** Community cards dealt so far (empty in hybrid unless host enters them). */
+  /** Community cards dealt so far. Hybrid: only the cards the host entered (may lag the street). */
   board: readonly Card[];
   /** Players dealt into the hand, in seat order. */
   players: readonly HandPlayer[];
@@ -170,7 +170,11 @@ export type EngineErrorCode =
   | 'invalid_cards'
   | 'unknown_pot'
   | 'invalid_winners'
-  | 'pot_already_awarded';
+  | 'pot_already_awarded'
+  /** Hybrid: betting is complete; only the host's advance_street can move the hand on. */
+  | 'awaiting_host'
+  /** advance_street while players still owe an action. */
+  | 'betting_incomplete';
 
 export interface EngineError {
   code: EngineErrorCode;
