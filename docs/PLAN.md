@@ -103,19 +103,25 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - _Note: GO on round 1. `cock` is blocked unless it sits inside an allowlisted word (`COCK_WORDS`). Accepted over-blocks under the owner's policy: cocky, cockscomb, some cock-surnames (Laycock, Hiscock…), Cummins, `the_snigger`. Candidates to add to `COCK_WORDS` if users appeal._
 
 
-### 🟨 P09 · Server JWT auth
+### ✅ P09 · Server JWT auth
 - **Needs:** P03, P06
 - **Do:** Fastify `onRequest` auth hook that verifies the Supabase JWT via JWKS (cached) and sets `request.user = { userId, isAnonymous }`. Add `GET /me`. Widen log redaction to any new secret-bearing headers or fields (`proxy-authorization`, `x-api-key`, tokens in bodies), and add tests for them.
 - **Done when:** tests with locally signed tokens cover valid, expired, wrong-issuer and missing-token cases.
+- _Note: GO on round 4 (the owner approved an extra round).
+  - Local Supabase signs with ES256 (`supabase/signing_keys.json`, gitignored). The server verifies via JWKS only, with two-layer alg allow-list, required `iat`, `maxTokenAge` 1h and 10s tolerance.
+  - A JWKS outage or an empty keyset returns 503 `auth_unavailable` with `Retry-After`. Clients must only sign out on 401.
+  - pino `redact` is removed. A custom sanitizer in `logging/sanitize.ts` redacts secret keys at any depth and never throws.
+  - Logged URLs are path-only.
+  - Supabase `jwt_expiry` must stay ≤ 3600._
 
 ### ⬜ P10 · Username endpoints
 - **Needs:** P07, P08, P09
-- **Do:** `GET /usernames/check` and `POST /me/username`, storing and returning the NORMALISED name (`UsernameSchema.parse` output), following the ARCHITECTURE §6 pipeline. Claiming writes with the service role and maps a unique violation to 409. Rate-limit the check endpoint.
+- **Do:** (From the P09 tester: drop `err.rawPacket` in `errSerializer`, because at trace level it carries raw request bytes, which may include tokens. Add a test.) (Also from the P09 tester: a JWT stays valid after logout or user deletion until it expires, so never trust `sub` alone. Look up the profile/user and treat a missing row as 401/404.) `GET /usernames/check` and `POST /me/username`, storing and returning the NORMALISED name (`UsernameSchema.parse` output), following the ARCHITECTURE §6 pipeline. Claiming writes with the service role and maps a unique violation to 409. Rate-limit the check endpoint.
 - **Done when:** tests cover every `reason` value, a successful claim, a duplicate claim → 409, and the race (two parallel claims → exactly one 201).
 
 ### ⬜ P11 · Web auth
 - **Needs:** P02, P06
-- **Do:** Supabase client in `apps/web/src/lib`, automatic anonymous sign-in on first visit, and an auth store (session, `userId`). Google is deferred: no button.
+- **Do:** Supabase client in `apps/web/src/lib`, automatic anonymous sign-in on first visit, and an auth store (session, `userId`). Google is deferred: no button. On a 401 `expired`/`invalid`, refresh the session once and retry, then sign out. On a 503 `auth_unavailable`, retry with backoff and NEVER sign out.
 - **Done when:** a first visit creates an anonymous session, and the same user ID survives a reload (screenshots).
 
 ### ⬜ P12 · Username onboarding UI
@@ -208,7 +214,7 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 
 ### ⬜ P28 · Socket.io server + auth
 - **Needs:** P09, P26
-- **Do:** Attach Socket.io to Fastify, add JWT `io.use()` middleware, restrict the origin, and Zod-validate every incoming event (with a typed handler helper).
+- **Do:** Attach Socket.io to Fastify, add JWT `io.use()` middleware, restrict the origin, and Zod-validate every incoming event (with a typed handler helper). (From the P09 tester: re-verify on token refresh and disconnect at token `exp`, and never log handshake URLs or query strings.)
 - **Done when:** tests show an unauthenticated connection is rejected, an invalid payload gets an error ack, and a valid connection succeeds.
 
 ### ⬜ P29 · RoomActor & registry

@@ -1,9 +1,18 @@
 import { createRequire } from 'node:module';
 import cors from '@fastify/cors';
-import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
+import { stdSerializers } from 'pino';
+import Fastify, {
+  type FastifyInstance,
+  type FastifyRequest,
+  type FastifyServerOptions,
+} from 'fastify';
 import type { Env } from './config/env';
 import type { RedisLike } from './config/redis';
+import { registerAuth } from './auth/plugin';
+import { createRemoteKeySet, createVerifier, issuerFor, type KeySet } from './auth/verify';
+import { isPlainObject, sanitizeLogObject, sanitizeValue } from './logging/sanitize';
 import { registerHealth } from './http/health';
+import { registerMe } from './http/me';
 
 function hasPinoPretty(): boolean {
   try {
@@ -14,29 +23,79 @@ function hasPinoPretty(): boolean {
   }
 }
 
-/**
- * Fastify's default `req` serializer omits headers, so these paths are a safety net for any
- * object that does get logged with headers (e.g. `log.info({ req: { headers } })`, custom serializers).
- * pino wildcards match exactly one level, hence the explicit variants.
- */
-export const REDACT_PATHS = [
-  'headers.authorization',
-  'headers.cookie',
-  '*.headers.authorization',
-  '*.headers.cookie',
-  '*.*.headers.authorization',
-  '*.*.headers.cookie',
-  'req.headers.authorization',
-  'req.headers.cookie',
-  'res.headers["set-cookie"]',
-  '*.headers["set-cookie"]',
-  'headers["set-cookie"]',
-];
-
 export interface AppDeps {
   redis: RedisLike;
   /** Destination for log lines; tests use it to capture output. Disables the pretty transport. */
   logStream?: { write(msg: string): void };
+  /** JWT key source; tests inject a local JWKS. Defaults to the remote, cached `SUPABASE_JWKS_URL`. */
+  keySet?: KeySet;
+}
+
+/**
+ * No pino `redact` is used: its wildcard paths throw on Buffers nested in Fastify's error
+ * payloads. `sanitizeLogObject` (via formatters.log and these serializers) handles secret keys,
+ * including header names, at any depth.
+ */
+const LOG_ERROR_MARKER = { logSanitizeError: true };
+
+export function errSerializer(e: unknown): unknown {
+  try {
+    const out: unknown = stdSerializers.err(e as Error);
+    // Strings (`{ err: err.message }`), numbers, null etc. pass through verbatim.
+    return typeof out === 'object' && out !== null ? sanitizeValue(out) : out;
+  } catch {
+    return LOG_ERROR_MARKER;
+  }
+}
+
+function stripQuery(url: string): string {
+  const i = url.indexOf('?');
+  return i === -1 ? url : url.slice(0, i);
+}
+
+/** Path only: query strings can carry tokens (`?access_token=`), so never log them. */
+export function reqSerializer(req: unknown): unknown {
+  try {
+    const r = req as FastifyRequest;
+    // Anything logged under `req` that is not a real request is sanitised and passed through.
+    if (typeof r?.url !== 'string') return sanitizeValue(req);
+    if (isPlainObject(r)) {
+      const clean = sanitizeValue(req) as Record<string, unknown>;
+      if (typeof clean.url === 'string') clean.url = stripQuery(clean.url);
+      return clean;
+    }
+    return {
+      method: r.method,
+      url: stripQuery(r.url),
+      host: r.host,
+      remoteAddress: r.ip,
+    };
+  } catch {
+    return LOG_ERROR_MARKER;
+  }
+}
+
+/** Keys whose values pino hands to their own serializers (which sanitise); left raw here. */
+const SERIALIZER_KEYS = ['req', 'res', 'err'];
+
+/** `formatters.log`: sanitise everything except class instances owned by the req/res/err serializers. */
+export function formatLogObject(obj: Record<string, unknown>): Record<string, unknown> {
+  try {
+    const keep: Record<string, unknown> = {};
+    const rest: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      const owned =
+        SERIALIZER_KEYS.includes(key) &&
+        typeof value === 'object' &&
+        value !== null &&
+        !Array.isArray(value) &&
+        !isPlainObject(value);
+      (owned ? keep : rest)[key] = value;
+    }
+    return { ...sanitizeLogObject(rest), ...keep };
+  } catch {
+    return { ...LOG_ERROR_MARKER };
+  }
 }
 
 function loggerOptions(
@@ -45,7 +104,13 @@ function loggerOptions(
 ): NonNullable<FastifyServerOptions['logger']> {
   return {
     level: env.LOG_LEVEL,
-    redact: { paths: REDACT_PATHS, censor: '[Redacted]' },
+    formatters: { log: formatLogObject },
+    serializers: {
+      // Own enumerable fields on Errors (`token`, `nested.password`...) are sanitised too.
+      err: errSerializer as never,
+      // Path only: query strings can carry tokens (`?access_token=`), so never log them.
+      req: reqSerializer as never,
+    },
     ...(logStream ? { stream: logStream } : {}),
     // pretty output only in development (optional dependency); JSON everywhere else
     ...(!logStream && env.NODE_ENV === 'development' && hasPinoPretty()
@@ -63,7 +128,25 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
   const app = Fastify({ logger: loggerOptions(env, deps.logStream) });
 
   await app.register(cors, { origin: env.WEB_ORIGIN });
+  const verify = createVerifier({
+    issuer: issuerFor(env.SUPABASE_URL),
+    keySet: deps.keySet ?? createRemoteKeySet(env.SUPABASE_JWKS_URL),
+  });
+  registerAuth(app, verify); // after CORS (preflight is answered first); default-deny from here on
   registerHealth(app, deps.redis);
+  registerMe(app);
+
+  // Fastify's default 404 handler logs the full URL (query string included); use the path only.
+  // Same body shape as the default. Not-found handlers run unauthenticated: never return data here.
+  app.setNotFoundHandler((request, reply) => {
+    const path = request.url.replace(/\?.*$/s, '');
+    request.log.info({ method: request.method, path }, 'route not found');
+    return reply.code(404).send({
+      message: `Route ${request.method}:${path} not found`,
+      error: 'Not Found',
+      statusCode: 404,
+    });
+  });
 
   return app;
 }

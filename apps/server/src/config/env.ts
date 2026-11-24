@@ -25,6 +25,21 @@ const originList = z
       .min(1, 'must contain at least one origin'),
   );
 
+/** http(s) URL, trailing slashes stripped so `${url}/auth/v1` matches the token `iss` exactly. */
+const httpUrl = z
+  .string({ error: 'is required in production (e.g. https://<ref>.supabase.co)' })
+  .transform((value, ctx) => {
+    try {
+      const url = new URL(value.trim());
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('protocol');
+      if (url.search !== '' || url.hash !== '') throw new Error('query');
+      return url.href.replace(/\/+$/, '');
+    } catch {
+      ctx.addIssue({ code: 'custom', message: `"${value}" is not a valid http(s) URL` });
+      return z.NEVER;
+    }
+  });
+
 export const envSchema = z.object({
   // Dev: `PORT=3001 npm run dev` runs the server on another port if 3000 is taken.
   PORT: z.coerce.number().int().min(0).max(65535).default(3000),
@@ -33,11 +48,16 @@ export const envSchema = z.object({
   REDIS_URL: z
     .string({ error: 'is required in production (e.g. redis://host:6379)' })
     .refine((v) => /^rediss?:\/\/\S+$/.test(v), 'must be a redis:// or rediss:// URL'),
+  SUPABASE_URL: httpUrl,
+  /** Optional override; defaults to `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`. */
+  SUPABASE_JWKS_URL: httpUrl.optional(),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
 
-export type Env = z.infer<typeof envSchema>;
+type ParsedEnv = z.infer<typeof envSchema>;
+/** Validated config; `SUPABASE_JWKS_URL` is always resolved. */
+export type Env = Omit<ParsedEnv, 'SUPABASE_JWKS_URL'> & { SUPABASE_JWKS_URL: string };
 
 /** Parse and validate environment variables. Throws one error listing every problem. */
 export function loadEnv(source: Record<string, string | undefined> = process.env): Env {
@@ -53,6 +73,8 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
   if (nodeEnv === 'development') cleaned.WEB_ORIGIN ??= 'http://localhost:5173';
   if (nodeEnv === 'development' || nodeEnv === 'test')
     cleaned.REDIS_URL ??= 'redis://localhost:6379';
+  if (nodeEnv === 'development' || nodeEnv === 'test')
+    cleaned.SUPABASE_URL ??= 'http://127.0.0.1:54321';
   const result = envSchema.safeParse(cleaned);
   if (!result.success) {
     const lines = result.error.issues.map(
@@ -60,5 +82,13 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
     );
     throw new Error(`Invalid environment configuration:\n${lines.join('\n')}`);
   }
-  return result.data;
+  const data = result.data;
+  const jwksUrl = data.SUPABASE_JWKS_URL ?? `${data.SUPABASE_URL}/auth/v1/.well-known/jwks.json`;
+  // Signing keys fetched over plain http could be swapped by a network attacker.
+  if (data.NODE_ENV === 'production' && !jwksUrl.startsWith('https://')) {
+    throw new Error(
+      'Invalid environment configuration:\n  - SUPABASE_JWKS_URL: must be https in production',
+    );
+  }
+  return { ...data, SUPABASE_JWKS_URL: jwksUrl };
 }

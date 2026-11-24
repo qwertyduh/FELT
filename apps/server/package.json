@@ -18,7 +18,9 @@
     "@felt/protocol": "*",
     "fastify": "^5.12.8",
     "ioredis": "^6.1.0",
+    "jose": "^6.2.18",
     "obscenity": "^0.4.6",
+    "pino": "^10.4.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {

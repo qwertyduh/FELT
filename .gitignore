@@ -46,3 +46,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Supabase local JWT signing key (SECRET)
+supabase/signing_keys.json

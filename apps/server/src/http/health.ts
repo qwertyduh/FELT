@@ -30,7 +30,7 @@ async function redisIsUp(redis: RedisLike): Promise<boolean> {
 
 /** Liveness probe: always 200; `status` is "degraded" when Redis is unreachable. */
 export function registerHealth(app: FastifyInstance, redis: RedisLike): void {
-  app.get('/health', async (): Promise<HealthResponse> => {
+  app.get('/health', { config: { public: true } }, async (): Promise<HealthResponse> => {
     const up = await redisIsUp(redis);
     return { status: up ? 'ok' : 'degraded', uptime: process.uptime(), redis: up ? 'ok' : 'down' };
   });
