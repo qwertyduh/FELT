@@ -95,6 +95,12 @@ export interface HandState {
   deck: readonly Card[] | null;
   /** Hybrid: pots the host has awarded so far. */
   awardedPotIds: readonly string[];
+  /**
+   * P24 (additive, optional): hybrid awards made so far, in awarded order. Winnings are added to
+   * stacks immediately; this keeps the per-pot detail until the hand ends and `result.awards`
+   * is built from it. Absent/empty before the first award.
+   */
+  pendingAwards?: readonly PotAward[];
   /** Final stack per playerId once the hand has ended; null while running. */
   result: HandResult | null;
 }

@@ -214,10 +214,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests for a split main pot with a single-winner side pot, a three-way tie, and odd-chip placement.
 - _Note: GO on round 2 (Opus tester round 1 found test gaps and corrupt-state throws; fixed). `resolveShowdown` in showdown.ts runs automatically in online mode when the hand reaches showdown. Odd chips go clockwise starting left of the button, per pot. Single-eligible pots aren't evaluated. `HandResult.showdown` lists the non-folded players in a pot with 2 or more eligible, so there is no mucking. Verified against 140k independent hands. Notes for P24: hybrid has no hole cards, so don't call bestOf7; reuse the odd-chip order; mirror the final-state contract (street 'ended', committed zeroed). Non-blocking: a few guards lack tests (duplicate player ids, empty eligible list); numeric player fields (stack/seat) aren't validated; a player id of '__proto__' would be dropped from result maps._
 
-### ⬜ P24 · Hybrid award
+### ✅ P24 · Hybrid award
 - **Needs:** P22
 - **Do:** `HostAction award_pot` with validation that winners are eligible for that pot; the hand ends once every pot is awarded.
 - **Done when:** tests for a valid award, an ineligible winner rejected, and a split award.
+- _Note: GO round 1. `awardPot` in award.ts, reached through `applyHostAction({type:'award_pot'})`; `splitPot` is shared with P23. The host awards every pot explicitly, in any order. Winnings go to stacks immediately, tracked by awardedPotIds/pendingAwards, so conservation is sum(stacks) + unawarded pot amounts. A single-eligible pot only accepts that player: the UI should pre-fill it. Non-blocking: no test for a folded id listed in eligible (the guard exists); a player id of '__proto__' breaks the amounts maps (use Object.hasOwn or null-prototype maps if ids ever stop being UUIDs)._
 
 ### ⬜ P25 · Chip conservation property test
 - **Needs:** P23, P24

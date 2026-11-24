@@ -1,5 +1,6 @@
 import { firstToActPostflop, isBettingComplete } from './actions';
 import { isCard } from './cards';
+import { awardPot } from './award';
 import { settleBets } from './pots';
 import { resolveShowdown } from './showdown';
 import type {
@@ -25,7 +26,7 @@ function fail<T>(code: EngineError['code'], message: string): Result<T> {
  *   player acts. In ONLINE mode it chains `advanceStreet` itself: when betting completes the
  *   result already sits on the next street (events: player_acted, street_advanced...).
  * - `applyHostAction(state, hostAction)` is the hybrid entry for host actions
- *   (`advance_street` now, `award_pot` in P24).
+ *   (`advance_street`, `award_pot` (award.ts)).
  * - `advanceStreet(state, hostAction?)` is the underlying step. Online: no hostAction, runs
  *   every street that needs no betting. Hybrid: requires `advance_street`, moves ONE street.
  *   The server also calls it once right after `startHand` in online mode when
@@ -170,13 +171,12 @@ export function advanceStreet(state: HandState, hostAction?: HostAction): Result
   return { ok: true, value: { state: cur, events } };
 }
 
-/** Hybrid host entry point. `award_pot` arrives with P24. */
+/** Hybrid host entry point: advance_street and award_pot. */
 export function applyHostAction(state: HandState, action: HostAction): Result<Transition> {
   if (typeof action !== 'object' || action === null) {
     return fail('illegal_action', 'action must be an object');
   }
   if (action.type === 'advance_street') return advanceStreet(state, action);
-  if (action.type === 'award_pot')
-    return fail('illegal_action', 'award_pot is not implemented yet');
+  if (action.type === 'award_pot') return awardPot(state, action);
   return fail('illegal_action', 'unknown host action type');
 }

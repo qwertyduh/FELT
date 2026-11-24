@@ -8,3 +8,4 @@ export * from './actions';
 export * from './street';
 export * from './pots';
 export * from './showdown';
+export * from './award';

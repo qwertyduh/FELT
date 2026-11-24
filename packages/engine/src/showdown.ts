@@ -14,6 +14,28 @@ import type {
   Transition,
 } from './types';
 
+/**
+ * Splits `amount` among `winners` (P23 rule, reused by the hybrid host award in P24): winners are
+ * ordered clockwise from the button (seats after the button first, the button last), each gets
+ * floor(amount / n) and the odd chips go one at a time down that order. Returns playerId -> chips
+ * in that order. `winners` must be non-empty.
+ */
+export function splitPot(
+  amount: number,
+  winners: readonly HandPlayer[],
+  button: number,
+): { order: HandPlayer[]; amounts: Record<string, number> } {
+  const k = (p: HandPlayer) => (p.seat > button ? p.seat - button : p.seat + 1000);
+  const order = [...winners].sort((a, b) => k(a) - k(b));
+  const share = Math.floor(amount / order.length);
+  const odd = amount - share * order.length;
+  const amounts: Record<string, number> = {};
+  order.forEach((w, i) => {
+    amounts[w.playerId] = share + (i < odd ? 1 : 0);
+  });
+  return { order, amounts };
+}
+
 function fail<T>(code: EngineError['code'], message: string): Result<T> {
   return { ok: false, error: { code, message } };
 }
@@ -100,12 +122,6 @@ export function resolveShowdown(state: HandState): Result<Transition> {
     best.set(p.playerId, b);
     return b;
   };
-  // Clockwise from the button: seats after the button first, the button last.
-  const clockwise = (a: HandPlayer, b: HandPlayer): number => {
-    const k = (p: HandPlayer) => (p.seat > state.button ? p.seat - state.button : p.seat + 1000);
-    return k(a) - k(b);
-  };
-
   const won = new Map<string, number>();
   const awards: PotAward[] = [];
   const shown = new Set<string>();
@@ -137,14 +153,12 @@ export function resolveShowdown(state: HandState): Result<Transition> {
       }
       for (const w of winners) handNames[w.playerId] = handName(best.get(w.playerId) as BestHand);
     }
-    winners = [...winners].sort(clockwise);
-    const share = Math.floor(pot.amount / winners.length);
-    const odd = pot.amount - share * winners.length;
-    const amounts: Record<string, number> = {};
-    winners.forEach((w, i) => {
-      amounts[w.playerId] = share + (i < odd ? 1 : 0);
+    const split = splitPot(pot.amount, winners, state.button);
+    winners = split.order;
+    const amounts = split.amounts;
+    for (const w of winners) {
       won.set(w.playerId, (won.get(w.playerId) ?? 0) + (amounts[w.playerId] as number));
-    });
+    }
     awards.push({
       potId: pot.id,
       winners: winners.map((w) => w.playerId),
