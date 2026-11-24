@@ -4,3 +4,4 @@ export * from './cards';
 export * from './deck';
 export * from './hand';
 export * from './start-hand';
+export * from './actions';

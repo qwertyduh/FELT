@@ -184,15 +184,17 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests cover 2, 3 and 9 players, a button moving past an empty seat, a short-stack blind, and hybrid (no cards).
 - _Note: GO round 1. Decisions: eligible = occupied, not sitting out, stack>0; first button = lowest eligible seat; no dead button (so a 3→2 transition can give the same player BB twice); heads-up button = SB and acts first preflop; short blinds post min(blind,stack); currentBet is always bigBlind; deal starts left of the button, no burn cards, deck needs 2n+5. Tester fuzzed 20k tables against an independent reference; 15/15 mutants killed. Follow-ups: use Number.isSafeInteger for stacks and blinds; a runtime guard on mode and sparse seats._
 
-### ⬜ P19 · Basic actions: fold / check / call
+### ✅ P19 · Basic actions: fold / check / call
 - **Needs:** P18
 - **Do:** `applyAction` for fold/check/call with legality checks, turn order, and detection of the end of a betting round. Last player standing wins the hand.
 - **Done when:** tests cover illegal check facing a bet, acting out of turn, everyone checking through, fold to the winner, and the big blind's option pre-flop.
+- _Note: GO on round 2. Round 1 found unknown action types accepted as a free pass; fixed, plus null/garbage state and action guards. `applyAction(state, action)` is in actions.ts, with `isBettingComplete` and `firstToActPostflop`. Verified by an independent TDA model fuzz (about 1M steps per run, 12 runs)._
 
-### ⬜ P20 · Bet / raise / all-in
+### ✅ P20 · Bet / raise / all-in
 - **Needs:** P19
 - **Do:** Min bet = big blind, min raise = last full raise, all-in for less, and a short all-in not reopening the action to players who already acted.
 - **Done when:** tests for each rule, including the "short all-in doesn't reopen" case and a re-raise after a full raise.
+- _Note: GO on round 2. Added `HandPlayer.facedBet`. Short all-ins don't reopen betting, but cumulative short all-ins summing to a full raise do (TDA). `currentBet` stays bigBlind when the BB is short. P21's street reset must set bets, hasActed, facedBet and currentBet to 0, lastFullRaise to bigBlind, and the actor from firstToActPostflop. Follow-ups: P22 returns the uncalled excess (it is currently inside the pot-0 award); consider clamping `call` to the highest live opponent bet._
 
 ### ⬜ P21 · Street progression
 - **Needs:** P20

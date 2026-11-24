@@ -40,20 +40,25 @@ function fail<T>(code: EngineError['code'], message: string): Result<T> {
  */
 export function startHand(table: TableState, deck: readonly Card[] | null): Result<Transition> {
   const { seats, smallBlind, bigBlind } = table;
-  const isChips = (n: number): boolean => Number.isInteger(n) && n > 0;
+  const isChips = (n: number): boolean => Number.isSafeInteger(n) && n > 0;
   if (!isChips(smallBlind) || !isChips(bigBlind) || smallBlind > bigBlind) {
     return fail('invalid_state', 'blinds must be positive integers with smallBlind <= bigBlind');
   }
+  if (table.mode !== 'online' && table.mode !== 'hybrid') {
+    return fail('invalid_state', 'unknown mode');
+  }
   if (
     table.button !== null &&
-    (!Number.isInteger(table.button) || table.button < 0 || table.button >= seats.length)
+    (!Number.isSafeInteger(table.button) || table.button < 0 || table.button >= seats.length)
   ) {
     return fail('invalid_state', 'button seat out of range');
   }
   const ids = new Set<string>();
-  for (const s of seats) {
+  for (let i = 0; i < seats.length; i++) {
+    const s = seats[i];
+    if (s === undefined) return fail('invalid_state', `seat ${i} is missing (sparse seats)`);
     if (s === null) continue;
-    if (!Number.isInteger(s.stack) || s.stack < 0) {
+    if (!Number.isSafeInteger(s.stack) || s.stack < 0) {
       return fail('invalid_state', `invalid stack for ${s.playerId}`);
     }
     if (ids.has(s.playerId)) return fail('invalid_state', `duplicate player ${s.playerId}`);
@@ -127,6 +132,7 @@ export function startHand(table: TableState, deck: readonly Card[] | null): Resu
       committed: posted,
       status: stack === 0 ? 'all_in' : 'active',
       hasActed: false,
+      facedBet: 0,
       hole: hole.get(seat) ?? null,
     };
   });

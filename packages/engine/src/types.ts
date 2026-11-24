@@ -51,6 +51,14 @@ export interface HandPlayer {
   status: PlayerStatus;
   /** True once the player has acted since the last full raise (round-closing check). */
   hasActed: boolean;
+  /**
+   * P20 (additive): the street `currentBet` level in force right after this player last acted
+   * (their own raise counts as the level).
+   * A player who already acted may re-raise only if the bet has since grown by at least
+   * `lastFullRaise` (TDA: a short all-in raise does not reopen the betting to players who
+   * already acted; several short raises that add up to a full raise do).
+   */
+  facedBet: number;
   /** Null in hybrid mode (no cards) or before dealing. */
   hole: readonly [Card, Card] | null;
 }
