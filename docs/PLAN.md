@@ -178,10 +178,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests over a corpus of at least 30 known head-to-head results, including kicker and split cases.
 - _Note: GO round 1. `bestOf7` accepts 5–7 cards and returns the best five. `handName` takes any HandRank. 400k random and adversarial deals matched an independent reference; 22/23 mutants killed (the survivor is equivalent). 100k bestOf7 ≈ 0.74s. Nit: handName throws on a hand-built HandRank with a short tiebreak._
 
-### ⬜ P18 · Start hand
+### ✅ P18 · Start hand
 - **Needs:** P15
 - **Do:** `startHand(table, deck | null)`: button rotation, skipping sat-out and busted players, posting blinds (heads-up rule, short-stack blind all-in), dealing hole cards when a deck is given, and setting the first to act.
 - **Done when:** tests cover 2, 3 and 9 players, a button moving past an empty seat, a short-stack blind, and hybrid (no cards).
+- _Note: GO round 1. Decisions: eligible = occupied, not sitting out, stack>0; first button = lowest eligible seat; no dead button (so a 3→2 transition can give the same player BB twice); heads-up button = SB and acts first preflop; short blinds post min(blind,stack); currentBet is always bigBlind; deal starts left of the button, no burn cards, deck needs 2n+5. Tester fuzzed 20k tables against an independent reference; 15/15 mutants killed. Follow-ups: use Number.isSafeInteger for stacks and blinds; a runtime guard on mode and sparse seats._
 
 ### ⬜ P19 · Basic actions: fold / check / call
 - **Needs:** P18
