@@ -154,15 +154,17 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 
 ## Stage B — Poker engine (pure, `packages/engine`)
 
-### ⬜ P14 · Engine types & card helpers
+### ✅ P14 · Engine types & card helpers
 - **Needs:** P01
 - **Do:** Types: `Card`, `Rank`, `Suit`, `SeatState`, `TableState`, `HandState`, `PlayerAction`, `HostAction`, `EngineEvent`, `EngineError`, `Result`. Card `parse`/`format` helpers (`"Ah"`, `"Td"`). Add an ESLint override for `packages/engine` + `packages/bots` banning `Math.random`, `Date.now` and `new Date` (`no-restricted-properties` / `no-restricted-syntax`).
 - **Done when:** helper tests pass; types compile; there's no logic yet beyond the helpers.
+- _Note: GO round 1. Types in packages/engine/src/types.ts. Code supersedes the ARCHITECTURE §4 sketch: `Result<T,E> = {ok:true,value}|{ok:false,error}`, `Transition = {state,events}`. No antes/straddles. Known lint gaps (non-blocking): `Date()` without new and `globalThis.Math/Date` aren't caught; tsc `types: []` covers performance/setTimeout. Later phases may add fields: raise-reopen tracking (P20), a bet_returned event (P22), a showdown event (P23)._
 
-### ⬜ P15 · Deck & shuffle
+### ✅ P15 · Deck & shuffle
 - **Needs:** P14
 - **Do:** `createDeck()` and `shuffle(deck, randInt)` (Fisher–Yates with an injected RNG).
 - **Done when:** tests confirm 52 unique cards, a deterministic order with a seeded RNG, and a chi-square sanity check on position distribution.
+- _Note: GO round 1. `shuffle` is generic, copies its input and throws RangeError on a bad RNG value. Tester verified uniformity with 3 chi-square tests; 12/12 mutants killed._
 
 ### ⬜ P16 · 5-card hand evaluator
 - **Needs:** P14

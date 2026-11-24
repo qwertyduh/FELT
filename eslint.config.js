@@ -23,4 +23,34 @@ export default tseslint.config(
       'react-refresh/only-export-components': ['error', { allowConstantExport: true }],
     },
   },
+  {
+    files: ['packages/engine/**/*.ts', 'packages/bots/**/*.ts'],
+    rules: {
+      // Engine/bots are pure: randomness and time are injected, never ambient.
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'Math',
+          property: 'random',
+          message: 'Pure package: inject RNG (randInt) instead.',
+        },
+        {
+          object: 'Date',
+          property: 'now',
+          message: 'Pure package: pass time in as epoch ms instead.',
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "NewExpression[callee.name='Date']",
+          message: 'Pure package: pass time in as epoch ms instead.',
+        },
+        {
+          selector: "CallExpression[callee.object.name='globalThis'][callee.property.name='Date']",
+          message: 'No ambient time.',
+        },
+      ],
+    },
+  },
 );
