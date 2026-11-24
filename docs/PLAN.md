@@ -85,10 +85,22 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** unit tests cover valid, too short, too long, bad characters and reserved names.
 - _Note: GO on round 2. Round 1 failed because removing a reserved word didn't fail any test; fixed with a hardcoded expected list. Reserved-word rule: exact match always counts; words of 4+ characters also match with leading `_` or trailing digits/`_`. For P10, the server must store and return the normalised (NFKC + trim) name, never the raw input._
 
-### ⬜ P08 · Profanity filter module
+### ✅ P08 · Profanity filter module
 - **Needs:** P07
 - **Do:** `apps/server/src/usernames/profanity.ts` wrapping `obscenity` (English dataset + recommended transformers). `isProfane(name): boolean` and `censor(text): string`.
 - **Done when:** tests pass for plain, leetspeak (`sh1t`), repeated-character, mixed-case and confusable cases, plus false-positive guards (e.g. `scunthorpe`, `classic`, `bass`).
+- _Note: GO on round 2. Round 1 failed on false positives (cockpit, cumin, retardant…) and missed slur spellings. Fixed with a whitelist, extra patterns, and a whole-token regex for spic/coon/paki/kys. Separator-split words still pass `censor` (accepted gap)._
+
+### ⬜ P08b · Profanity hardening (follow-up from P08 tester)
+- **Needs:** P08
+- **Do:** Close the gaps that come from the stock obscenity dataset:
+  - (a) `<word ending in s>` + n-word passes (`classnigger`, `bossnigger`) because it reads as "snigger". Flag the n-word even when it follows an `s`, while `snigger`/`sniggering` alone still pass.
+  - (b) Compound mild profanity passes: `big_wanker`, `bigwanker`, `big_cock`, `fatcock`, `xxcockxx`, `suck_cock`, `butthole`, `butt_hole`, `cvnt`. Flag these without re-breaking cockpit/cocktail/peacock/Hancock/Cockburn/cocoon.
+  - (c) Whitelist place names and surnames: `fukushima`, `fukuoka`, `fukui`, `cummings`, `dickerson`.
+  - (d) Remove the redundant whitelist entries (`wang`, `butts`, `kuntz`, `fuchs`, `penistone`) if stock obscenity doesn't flag them, and keep tests pinning that they pass.
+  - (e) Add tests for the `jackass`/`smartass`/`fatass` patterns so mutations are caught.
+- **Done when:** all of the above are covered by `it.each` cases in both directions; the round-2 false-positive sweep (300+ clean names) still passes; mutation of each new rule fails a test.
+
 
 ### ⬜ P09 · Server JWT auth
 - **Needs:** P03, P06
