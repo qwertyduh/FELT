@@ -166,15 +166,17 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests confirm 52 unique cards, a deterministic order with a seeded RNG, and a chi-square sanity check on position distribution.
 - _Note: GO round 1. `shuffle` is generic, copies its input and throws RangeError on a bad RNG value. Tester verified uniformity with 3 chi-square tests; 12/12 mutants killed._
 
-### ⬜ P16 · 5-card hand evaluator
+### ✅ P16 · 5-card hand evaluator
 - **Needs:** P14
 - **Do:** `evaluate5(cards)` → `{ category, tiebreak[] }` for all 10 categories, including the wheel (A-2-3-4-5).
 - **Done when:** at least one test per category, plus wheel and ace-high straight tests.
+- _Note: GO round 1. Royal flush is its own category (9). Bad input throws RangeError. evaluate5 verified against an independent evaluator on all 2,598,960 hands._
 
-### ⬜ P17 · 7-card best hand + compare + names
+### ✅ P17 · 7-card best hand + compare + names
 - **Needs:** P16
 - **Do:** `bestOf7`, `compareHands` and `handName` ("Full house, Kings over Threes").
 - **Done when:** tests over a corpus of at least 30 known head-to-head results, including kicker and split cases.
+- _Note: GO round 1. `bestOf7` accepts 5–7 cards and returns the best five. `handName` takes any HandRank. 400k random and adversarial deals matched an independent reference; 22/23 mutants killed (the survivor is equivalent). 100k bestOf7 ≈ 0.74s. Nit: handName throws on a hand-built HandRank with a short tiebreak._
 
 ### ⬜ P18 · Start hand
 - **Needs:** P15
