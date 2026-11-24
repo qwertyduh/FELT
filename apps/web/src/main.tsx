@@ -2,10 +2,13 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 import { App } from './App';
+import { startAuth } from './lib/auth';
 import './index.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Missing #root element');
+
+void startAuth(); // single-flight; runs once outside React so StrictMode can't double it
 
 createRoot(root).render(
   <StrictMode>

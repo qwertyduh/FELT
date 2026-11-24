@@ -126,10 +126,15 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
   - Worst-case `/me` for a user without a profile is ~9.5s (two sequential 5s budgets); add a shared deadline if it matters.
   - For P13: set Fastify `trustProxy` correctly behind Railway, and move rate limits to Redis if the server scales out._
 
-### ⬜ P11 · Web auth
+### ✅ P11 · Web auth
 - **Needs:** P02, P06
 - **Do:** Supabase client in `apps/web/src/lib`, automatic anonymous sign-in on first visit, and an auth store (session, `userId`). Google is deferred: no button. On a 401 `expired`/`invalid`, refresh the session once and retry, then sign out. On a 503 `auth_unavailable`, retry with backoff and NEVER sign out.
 - **Done when:** a first visit creates an anonymous session, and the same user ID survives a reload (screenshots).
+- _Note: GO on round 1.
+  - `npm run env:local -w apps/web` writes `apps/web/.env.local` (gitignored). In dev, open the web app at `http://localhost:5173` (not 127.0.0.1) so it matches the server's CORS `WEB_ORIGIN`.
+  - Sign-in runs from `main.tsx` (outside React), single-flight plus a Web Lock, so StrictMode and multiple tabs create one user.
+  - A dead refresh signs out locally and creates a new anonymous user; transient refresh failures don't sign out; 503 backs off (cap 8s, 4 retries) and never signs out.
+  - Minor: a 401 arriving after another call's refresh finished refreshes again (harmless)._
 
 ### ⬜ P12 · Username onboarding UI
 - **Needs:** P10, P11

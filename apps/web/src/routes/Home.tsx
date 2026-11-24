@@ -1,5 +1,6 @@
 import { Link } from 'react-router';
 import { protocolName } from '@felt/protocol';
+import { AuthStatus } from '../components/AuthStatus';
 import { useAppStore } from '../store/app';
 
 export function Home() {
@@ -8,6 +9,9 @@ export function Home() {
     <section>
       <h1 className="text-4xl font-bold tracking-wide">{appName}</h1>
       <p className="mt-2 text-sm opacity-70">Home (protocol: {protocolName})</p>
+      <div className="mt-4">
+        <AuthStatus />
+      </div>
       <nav className="mt-6 flex flex-col gap-2 underline">
         <Link to="/onboarding">Onboarding</Link>
         <Link to="/practice">Practice</Link>
