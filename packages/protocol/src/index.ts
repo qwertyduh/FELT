@@ -1,3 +1,7 @@
 export const protocolName = '@felt/protocol';
 
 export * from './usernames';
+export * from './common';
+export * from './rooms';
+export * from './state';
+export * from './events';

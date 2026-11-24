@@ -230,10 +230,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 
 ## Stage C — Rooms, join approval, hybrid mode
 
-### ⬜ P26 · Protocol: room settings & events
+### ✅ P26 · Protocol: room settings & events
 - **Needs:** P07, P14
 - **Do:** Zod schemas + types for `RoomSettings`, `PublicRoomState`, and every event in ARCHITECTURE §9 (no handlers). Typed event maps for Socket.io.
 - **Done when:** schema tests cover the buy-in range (min ≤ max), the seat range and the action payloads.
+- _Note: GO round 1. Protocol files in packages/protocol/src (common, rooms, state, events). Decisions: seats 2–9; room-code alphabet `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (31 chars); settings are flat with `maxBuyIn` null meaning no max; the blind-increase amount isn't specified anywhere (P4x must decide); added a `host:inbox` server event and the REST shapes. Notes for later phases: `parseClientEvent` throws on unknown event names (guard with `Object.hasOwn` in P28); the server must re-validate `host:settings` against the merged settings; P27's code generator should consider a small denylist of offensive 4-letter codes; `seats.length`/duplicate-board invariants belong to P32; engine `currentActor` is a seat index and needs mapping to a userId for `turn:start`._
 
 ### ⬜ P27 · Create & preview room (REST)
 - **Needs:** P09, P26, P04
