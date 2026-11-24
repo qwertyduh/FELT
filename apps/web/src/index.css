@@ -1,5 +1,18 @@
 @import 'tailwindcss';
 
+@theme {
+  --color-felt-950: #06261c;
+  --color-felt-900: #0b3d2e;
+  --color-felt-800: #11503c;
+  --color-felt-700: #1b6a50;
+  --color-cream: #f4f1e8;
+  --color-brass: #d8b45f;
+  --color-brass-dim: #9c8140;
+  --color-chip-red: #f08a7c;
+  --color-chip-green: #9be0b0;
+  --font-display: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+}
+
 :root {
   color-scheme: dark;
 }
@@ -21,4 +34,31 @@ body {
     Roboto,
     sans-serif;
   -webkit-text-size-adjust: 100%;
+}
+
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-brass);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes felt-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }

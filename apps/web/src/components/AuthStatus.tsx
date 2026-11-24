@@ -1,36 +1,20 @@
-import { useEffect, useState } from 'react';
-import { apiFetch } from '../lib/api';
+import { useEffect } from 'react';
 import { restartAuth } from '../lib/auth';
 import { useAuthStore } from '../lib/authStore';
-
-interface Me {
-  userId: string;
-  isAnonymous: boolean;
-  username: string | null;
-}
-
-type MeState = { kind: 'idle' } | { kind: 'ok'; me: Me } | { kind: 'error'; message: string };
+import { loadMe, useMeStore } from '../lib/meStore';
 
 export function AuthStatus() {
   const status = useAuthStore((s) => s.status);
   const userId = useAuthStore((s) => s.userId);
   const isAnonymous = useAuthStore((s) => s.isAnonymous);
   const error = useAuthStore((s) => s.error);
-  const [me, setMe] = useState<MeState>({ kind: 'idle' });
+  const meStatus = useMeStore((s) => s.status);
+  const meOwner = useMeStore((s) => s.forUserId);
+  const me = useMeStore((s) => s.me);
+  const meError = useMeStore((s) => s.error);
 
   useEffect(() => {
-    if (status !== 'signedIn' || !userId) return;
-    let cancelled = false;
-    apiFetch<Me>('/me')
-      .then((res) => !cancelled && setMe({ kind: 'ok', me: res }))
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        const code = err instanceof Error ? err.message : 'request failed';
-        setMe({ kind: 'error', message: code });
-      });
-    return () => {
-      cancelled = true;
-    };
+    if (status === 'signedIn' && userId) void loadMe(userId); // no-op when already cached
   }, [status, userId]);
 
   if (status === 'loading') {
@@ -61,12 +45,12 @@ export function AuthStatus() {
         <span data-testid="auth-user-id">{userId?.slice(0, 8)}</span>
       </p>
       <p data-testid="auth-me" className="opacity-70">
-        {me.kind === 'ok'
-          ? me.me.username
-            ? `@${me.me.username}`
+        {meOwner === userId && me
+          ? me.username
+            ? `@${me.username}`
             : 'no username yet'
-          : me.kind === 'error'
-            ? `Couldn't load profile (${me.message})`
+          : meOwner === userId && meStatus === 'error'
+            ? `Couldn't load profile (${meError})`
             : 'Loading profile…'}
       </p>
     </div>

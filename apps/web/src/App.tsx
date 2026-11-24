@@ -1,4 +1,5 @@
 import { Route, Routes } from 'react-router';
+import { RouteGuard } from './components/RouteGuard';
 import { Home } from './routes/Home';
 import { Learn } from './routes/Learn';
 import { NotFound } from './routes/NotFound';
@@ -19,15 +20,17 @@ export function App() {
           paddingLeft: 'max(1rem, env(safe-area-inset-left))',
         }}
       >
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/onboarding" element={<Onboarding />} />
-          <Route path="/r/:code" element={<Room />} />
-          <Route path="/practice" element={<Practice />} />
-          <Route path="/learn" element={<Learn />} />
-          <Route path="/recap/:slug" element={<Recap />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <RouteGuard>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/onboarding" element={<Onboarding />} />
+            <Route path="/r/:code" element={<Room />} />
+            <Route path="/practice" element={<Practice />} />
+            <Route path="/learn" element={<Learn />} />
+            <Route path="/recap/:slug" element={<Recap />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </RouteGuard>
       </main>
     </div>
   );

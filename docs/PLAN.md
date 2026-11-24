@@ -136,10 +136,12 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
   - A dead refresh signs out locally and creates a new anonymous user; transient refresh failures don't sign out; 503 backs off (cap 8s, 4 retries) and never signs out.
   - Minor: a 401 arriving after another call's refresh finished refreshes again (harmless)._
 
-### ⬜ P12 · Username onboarding UI
+### ✅ P12 · Username onboarding UI
 - **Needs:** P10, P11
 - **Do:** `/onboarding`: a username input with instant format feedback (shared schema), a debounced availability check and the submit flow. Redirect any user without a username here. When the server rejects a name as `profane`, show a small popup: "Think your name was blocked by mistake? Tag us on social media and we'll set up your account personally." The handle comes from one config constant (`SOCIAL_HANDLE`, placeholder until the owner provides it).
 - **Done when:** a Playwright test covers a taken name, a profane name (with the appeal popup), a valid claim and the redirect.
+- _Note: GO on round 1. `npm run e2e` runs the Playwright test (starts web + server itself; needs local Supabase and Redis on 6380). `SOCIAL_HANDLE` in `apps/web/src/config.ts` is a placeholder until the owner supplies it. Theme tokens (`felt-*`, `cream`, `brass`, `chip-*`) live in `index.css`.
+  - Follow-ups (non-blocking): carry a `returnTo` through onboarding so a deep link like `/r/ABC` survives (do it in P36, join flow). Appeal popup: Esc stops working after clicking its body text, and focus returns to `<body>` after a submit-triggered open. The placeholder text contrast is 2.46:1. The `already_set` path can leave the button stuck on "Claiming…" if the `/me` refresh fails._
 
 ### ⬜ P13 · Deploy skeleton 👤
 - **Needs:** P04, P11
