@@ -1,13 +1,47 @@
-node_modules
-dist
-coverage
+# Dependencies (reinstalled by `npm ci` on Vercel / Railway)
+node_modules/
+.npm/
+.pnpm-store/
+
+# Build output (rebuilt on the hosting platform)
+dist/
+build/
+.vite/
+*.tsbuildinfo
+.cache/
+.turbo/
+
+# Environment files: never commit (variables are documented in docs/ARCHITECTURE.md §12)
 .env
 .env.*
-!.env.example
+
+# Tests: local only, never pushed
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__/
+e2e/
+coverage/
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+
+# Platform / tooling local state
+.vercel/
+.railway/
+supabase/.temp/
+supabase/.branches/
+.claude/settings.local.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editors
 .DS_Store
-.vercel
-playwright-report
-test-results
-blob-report
-playwright/.cache
-*.tsbuildinfo
+Thumbs.db
+.vscode/
+.idea/
+*.swp
