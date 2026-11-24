@@ -31,6 +31,7 @@ playwright/.cache/
 # Platform / tooling local state
 .vercel/
 .railway/
+supabase/tests/
 supabase/.temp/
 supabase/.branches/
 .claude/settings.local.json

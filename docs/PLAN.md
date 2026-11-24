@@ -73,10 +73,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** the first run on GitHub is green.
 - _Note: Tester GO on round 1. Two jobs: `verify` (ci, typecheck, lint, format, builds) and `docker` (image build). Uses checkout/setup-node v7. A clean-checkout run in a linux container also passed._
 
-### 🟨 P06 · Supabase schema
+### ✅ P06 · Supabase schema
 - **Needs:** P01
 - **Do:** `supabase init`, then a migration with `citext`, `profiles` (ARCHITECTURE §7) and RLS (select-only for authenticated users). Enable anonymous sign-in in `supabase/config.toml`. Google stays disabled (deferred).
 - **Done when:** `supabase db reset` applies cleanly; a SQL test shows an invalid-format username is rejected and `Bob`/`bob` collide.
+- _Note: Tester GO on round 1. Local ports 54320–54324/54327 (another project's stack uses 5532x). Writes are blocked by revoked privileges and also by RLS alone (verified separately). 27 pgTAP tests, local only._
 
 ### ⬜ P07 · Protocol: username & name schemas
 - **Needs:** P01
