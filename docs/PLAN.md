@@ -79,10 +79,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** `supabase db reset` applies cleanly; a SQL test shows an invalid-format username is rejected and `Bob`/`bob` collide.
 - _Note: Tester GO on round 1. Local ports 54320–54324/54327 (another project's stack uses 5532x). Writes are blocked by revoked privileges and also by RLS alone (verified separately). 27 pgTAP tests, local only._
 
-### ⬜ P07 · Protocol: username & name schemas
+### ✅ P07 · Protocol: username schemas
 - **Needs:** P01
 - **Do:** In `packages/protocol`: a Zod `UsernameSchema` (format), a `RESERVED_NAMES` list and a `UsernameCheckResult` type. Export them for web + server.
 - **Done when:** unit tests cover valid, too short, too long, bad characters and reserved names.
+- _Note: GO on round 2. Round 1 failed because removing a reserved word didn't fail any test; fixed with a hardcoded expected list. Reserved-word rule: exact match always counts; words of 4+ characters also match with leading `_` or trailing digits/`_`. For P10, the server must store and return the normalised (NFKC + trim) name, never the raw input._
 
 ### ⬜ P08 · Profanity filter module
 - **Needs:** P07
@@ -96,7 +97,7 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 
 ### ⬜ P10 · Username endpoints
 - **Needs:** P07, P08, P09
-- **Do:** `GET /usernames/check` and `POST /me/username`, following the ARCHITECTURE §6 pipeline. Claiming writes with the service role and maps a unique violation to 409. Rate-limit the check endpoint.
+- **Do:** `GET /usernames/check` and `POST /me/username`, storing and returning the NORMALISED name (`UsernameSchema.parse` output), following the ARCHITECTURE §6 pipeline. Claiming writes with the service role and maps a unique violation to 409. Rate-limit the check endpoint.
 - **Done when:** tests cover every `reason` value, a successful claim, a duplicate claim → 409, and the race (two parallel claims → exactly one 201).
 
 ### ⬜ P11 · Web auth
