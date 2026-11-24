@@ -11,7 +11,8 @@ The build is split into small phases, each sized so **one agent can finish it in
 3. **Stay in scope.** Touch only the files and areas listed. If the work clearly needs something outside the phase, stop and report it instead of building it.
 4. **Don't invent.** If the spec is ambiguous or silent, stop and ask. Don't pick a behaviour and move on.
 5. **Prove it.** Every **Done when** item must be demonstrated (test output, command output, or a screenshot for UI). "Should work" doesn't count.
-6. **Don't commit.** Leave changes in the working tree. The orchestrator ticks the phase after the tester's GO, and commits only when the owner asks.
+6. **Don't commit.** Leave changes in the working tree. After the tester's GO, the orchestrator ticks the phase, commits `P<nn>: <title>` and pushes to GitHub (branch `rebuild`).
+7. **Never push tests, env files or rebuildable artifacts.** `.gitignore` excludes `*.test.*`, `*.spec.*`, `e2e/`, `.env*`, `node_modules/` and `dist/`. Tests live and run locally only. Keep `package-lock.json` committed, because Vercel and Railway need it for reproducible installs.
 
 ## Execution protocol: builder ↔ tester
 
@@ -45,10 +46,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · 👤 needs the owner 
 - **Done when:** `npm install && npm test && npm run typecheck && npm run lint` all pass from the root.
 - _Note: Tester GO on round 1. Typecheck is per-workspace `tsc --noEmit`, and all workspaces use `types: []` until P03 adds `@types/node` to the server. Lint is not type-aware. Workspace deps aren't enforced (npm hoisting)._
 
-### ⬜ P02 · Web app scaffold
+### ✅ P02 · Web app scaffold
 - **Needs:** P01
 - **Do:** Vite + React + TS in `apps/web`, Tailwind, React Router with placeholder routes (`/`, `/onboarding`, `/r/:code`, `/practice`, `/learn`, `/recap/:slug`), Zustand installed. Mobile-first base layout (375px).
 - **Done when:** `npm run dev -w apps/web` serves every route, with a screenshot of `/` at 375px.
+- _Note: Tester GO on round 1. React 19, Vite 8, Tailwind 4, react-router 7 (imports from `react-router`), Zustand 5. Vitest config lives in `apps/web/vite.config.ts` (jsdom). Vercel will need SPA rewrites (P13)._
 
 ### ⬜ P03 · Server scaffold
 - **Needs:** P01
@@ -62,8 +64,8 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · 👤 needs the owner 
 
 ### ⬜ P05 · CI
 - **Needs:** P01
-- **Do:** GitHub Actions workflow running install, typecheck, lint and test on push/PR.
-- **Done when:** the workflow file is valid (`act` dry-run or first green run).
+- **Do:** GitHub Actions workflow running `npm ci`, typecheck, lint and a production build on push/PR. Tests aren't pushed, so CI doesn't run them; they run locally before every commit.
+- **Done when:** the first run on GitHub is green.
 
 ### ⬜ P06 · Supabase schema 👤
 - **Needs:** P01
