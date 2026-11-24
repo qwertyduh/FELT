@@ -15,6 +15,9 @@ import { registerHealth } from './http/health';
 import { registerMe } from './http/me';
 import { createDbFromEnv, type Db } from './db/supabase';
 import { registerUsernameRoutes } from './usernames/routes';
+import { registerRoomRoutes } from './rooms/routes';
+import type { RoomRedis } from './rooms/redis';
+import type { RandomInt } from './rooms/code';
 
 function hasPinoPretty(): boolean {
   try {
@@ -26,7 +29,9 @@ function hasPinoPretty(): boolean {
 }
 
 export interface AppDeps {
-  redis: RedisLike;
+  redis: RedisLike & Partial<RoomRedis>;
+  /** Room-code RNG; tests inject a deterministic one. Defaults to crypto.randomInt. */
+  randomInt?: RandomInt;
   /** Destination for log lines; tests use it to capture output. Disables the pretty transport. */
   logStream?: { write(msg: string): void };
   /** JWT key source; tests inject a local JWKS. Defaults to the remote, cached `SUPABASE_JWKS_URL`. */
@@ -163,6 +168,12 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
   const db = deps.db !== undefined ? deps.db : createDbFromEnv(env);
   registerMe(app, db);
   await registerUsernameRoutes(app, db);
+  registerRoomRoutes(app, {
+    db,
+    redis: deps.redis,
+    webOrigin: env.WEB_ORIGIN,
+    ...(deps.randomInt ? { randomInt: deps.randomInt } : {}),
+  });
 
   // Fastify's default 404 handler logs the full URL (query string included); use the path only.
   // Same body shape as the default. Not-found handlers run unauthenticated: never return data here.

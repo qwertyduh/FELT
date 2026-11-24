@@ -236,10 +236,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** schema tests cover the buy-in range (min ≤ max), the seat range and the action payloads.
 - _Note: GO round 1. Protocol files in packages/protocol/src (common, rooms, state, events). Decisions: seats 2–9; room-code alphabet `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (31 chars); settings are flat with `maxBuyIn` null meaning no max; the blind-increase amount isn't specified anywhere (P4x must decide); added a `host:inbox` server event and the REST shapes. Notes for later phases: `parseClientEvent` throws on unknown event names (guard with `Object.hasOwn` in P28); the server must re-validate `host:settings` against the merged settings; P27's code generator should consider a small denylist of offensive 4-letter codes; `seats.length`/duplicate-board invariants belong to P32; engine `currentActor` is a seat index and needs mapping to a userId for `turn:start`._
 
-### ⬜ P27 · Create & preview room (REST)
+### ✅ P27 · Create & preview room (REST)
 - **Needs:** P09, P26, P04
 - **Do:** A room code generator (`FELT-XXXX`, no ambiguous characters, collision-checked), `POST /rooms` (stores the initial room in Redis and makes the creator host + admitted) and `GET /rooms/:code`.
 - **Done when:** tests for create by a user with a username, create rejected without a username, an unknown code → 404 and the preview shape.
+- _Note: GO round 1. `POST /rooms` and `GET /rooms/:code` in apps/server/src/rooms. Room record in Redis `room:{code}` with a 2h TTL, created atomically with SET NX. Per-host cap of 5 open rooms (fails closed under contention). Rate limits: 10 creates/min and 60 previews/min per user. Redis errors → 503 within 2s. Verified against real Redis. Follow-ups (non-blocking): extend the code denylist (KKKK, NGGR, FCUK, SHTT, BTCH, CNTS, PUSS, TARD, JEWS, PUTA, SCUM… and drop the entries that can't be emitted); the TTL test should assert the literal 7200; there's no concurrency test for the cap; `requests`/`seats`/`ledger` sub-schemas are provisional for P30–P32._
 
 ### ⬜ P28 · Socket.io server + auth
 - **Needs:** P09, P26
