@@ -16,7 +16,7 @@
 | Real-time | **Socket.io** (client + server) | Rooms, acks, auto-reconnect — all needed here |
 | Server | **Node.js + Fastify + TypeScript** | REST + hosts the Socket.io server in one process |
 | Validation | **Zod** | Validates env, REST bodies, and every socket payload |
-| Auth | **Supabase Auth**: Google OAuth + anonymous (guest) | One JWT format for guests and users |
+| Auth | **Supabase Auth**: anonymous sessions (v1); Google OAuth deferred | One JWT format now and after Google is added |
 | Profanity filter | **obscenity** (npm) + reserved-word list | Catches leetspeak/obfuscated spellings |
 | Database | **Supabase Postgres** | Usernames + short-lived shared recaps |
 | Game state | **Redis** | Room/hand state survives server restarts; Socket.io adapter for scaling later |
@@ -33,7 +33,7 @@
 Phone ───▶│  apps/web  (static PWA: React + Socket.io client)       │
   │       └────────────────────────────────────────────────────────┘
   │  OAuth / anon sign-in
-  ├──────────────────────────────▶  Supabase Auth  ──▶ issues JWT (Google or anonymous)
+  ├──────────────────────────────▶  Supabase Auth  ──▶ issues JWT (anonymous; Google later)
   │
   │  HTTPS (REST) + WSS (Socket.io), JWT in Authorization / handshake
   ▼
@@ -137,7 +137,7 @@ Test priorities: side pots with 3+ all-ins, split pots, min-raise edge cases, he
 - `settings`: mode, minBuyIn, maxBuyIn?, blinds, maxSeats, timer, blindIncrease
 - `hostId`
 - `admitted`: set of userIds allowed in this session
-- `joinRequests`: `{ requestId, userId, name, isGuest, expiresAt }[]`
+- `joinRequests`: `{ requestId, userId, username, expiresAt }[]`
 - `denied`: `userId → cooldownUntil`
 - `topUpRequests`: `{ requestId, userId, amount, createdAt }[]`
 - `pendingTopUps`: approved amounts, applied at the next hand start
@@ -160,10 +160,9 @@ v1 runs **one server instance**, because the in-process actor model requires all
 
 ## 6. Auth & usernames
 
-- **Web:** `supabase-js` handles Google OAuth, and `signInAnonymously()` handles guests.
+- **v1:** every player is a Supabase anonymous user. The web app calls `signInAnonymously()` on first visit, and `supabase-js` persists and refreshes the session on the device.
 - **Server:** verifies Supabase JWTs (JWKS, cached) on REST via a Fastify `onRequest` hook, and on Socket.io via `io.use()` reading `handshake.auth.token`. The socket re-authenticates when the token refreshes. Claims give `{ userId, isAnonymous }`.
-- **Account onboarding:** after the first Google sign-in, a user with no `profiles` row is sent to `/onboarding` to pick a username. Until they have one they can't create or join rooms as an account (they can still continue as a guest).
-- **Guest upgrade:** `linkIdentity()` converts an anonymous user into a Google user. The user ID stays the same, so their seat survives, and the user then goes through onboarding.
+- **Onboarding:** a user with no `profiles` row is sent to `/onboarding` to claim a username before creating or joining rooms.
 - **Username pipeline** (`apps/server/src/usernames/`), the same for checking and claiming:
   1. Normalise: trim, then apply Unicode NFKC
   2. Format: `^[A-Za-z0-9_]{3,20}$` (schema in `packages/protocol`, shared with the client for instant feedback)
@@ -171,10 +170,8 @@ v1 runs **one server instance**, because the in-process actor model requires all
   4. Profanity: the `obscenity` matcher with its English dataset plus recommended transformers (leetspeak, repeated chars, confusables)
   5. Uniqueness: a case-insensitive lookup in `profiles`
   - Claiming relies on the DB unique index as the final arbiter. A unique violation returns `409 username_taken`, which makes the claim race-safe.
-- **Guest names:** steps 1–4 only; uniqueness is checked against the room's seated and admitted names when joining.
 - Only the server writes `profiles.username` (service role) so the profanity filter can't be bypassed from the client.
-
----
+- **Deferred: Google sign-in.** `linkIdentity({ provider: 'google' })` upgrades the anonymous user in place, so the user ID, username and any seat survive. It needs a Google OAuth client and the provider enabled in Supabase. Nothing else in this design changes.
 
 ## 7. Data model (Postgres)
 
@@ -189,7 +186,7 @@ profiles (
               check (username ~ '^[A-Za-z0-9_]{3,20}$'),
   created_at  timestamptz not null default now()
 )
--- Only Google accounts get a row. Guests live only in room state.
+-- One row per player (anonymous user) once they claim a username.
 
 shared_recaps (
   id          text primary key,          -- short public slug
@@ -216,7 +213,6 @@ All routes require a Supabase JWT unless noted otherwise.
 | `GET` | `/me` | `{ userId, isAnonymous, username? }` |
 | `GET` | `/usernames/check?u=` | `{ available, reason?: 'format'\|'reserved'\|'profane'\|'taken' }` (rate-limited) |
 | `POST` | `/me/username` | Claim username → `201` / `409 username_taken` / `422 { reason }` |
-| `GET` | `/names/check?n=` | Guest name format + profanity check |
 | `POST` | `/rooms` | Create room → `{ code, url }` (guests allowed) |
 | `GET` | `/rooms/:code` | Preview: mode, host name, blinds, buy-in range, seats taken, status |
 | `POST` | `/recaps` | Freeze a finished session's recap → `{ slug }` (host only) |
@@ -233,7 +229,7 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 ### Client → Server
 | Event | Payload | Who |
 |---|---|---|
-| `room:request_join` | `{ code, guestName? }` | Anyone not yet admitted |
+| `room:request_join` | `{ code }` | Anyone not yet admitted |
 | `room:cancel_request` | — | Requester |
 | `room:enter` | `{ code }` | Admitted player (incl. on reconnect) |
 | `room:sit` | `{ seat, buyIn }` | Admitted player; `minBuyIn ≤ buyIn ≤ maxBuyIn` |
@@ -263,7 +259,7 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 |---|---|---|
 | `room:join_pending` | `{ requestId, expiresAt }` | Requester |
 | `room:join_decision` | `{ approved, retryAfter? }` | Requester |
-| `host:join_request` | `{ requestId, name, isGuest }` | Host |
+| `host:join_request` | `{ requestId, userId, username }` | Host |
 | `host:topup_request` | `{ requestId, userId, amount }` | Host |
 | `player:topup_decision` | `{ requestId, approved }` | Requester |
 | `room:state` | Full public room + hand state, `version` number | Admitted players |
@@ -339,7 +335,7 @@ CLIs: `supabase`, `vercel` and `railway`, each logged in by the developer.
 | 5 | Supabase anonymous auth for guests | Custom guest tokens (two auth paths to secure) |
 | 6 | Hybrid mode before online mode | Online first (as in v1) |
 | 7 | Practice mode runs fully client-side | Server-side bots (needless load, no offline) |
-| 8 | Google + guest only; no Apple sign-in | Apple (needs a paid developer account for web) |
+| 8 | v1 is anonymous accounts + unique usernames; Google deferred; no Apple | Google now (setup cost); Apple (paid developer account) |
 | 9 | Internet required for multiplayer; no LAN mode | WebRTC with the host phone as the authority (breaks fairness and card privacy, phones sleep) |
 | 10 | Join by host approval, always on | Open links (too easy to gatecrash) |
 | 11 | Railway for the game server | Fly.io (similar; Railway preferred by the owner) |

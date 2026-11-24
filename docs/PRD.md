@@ -8,7 +8,7 @@
 
 ## 1. Summary
 
-FELT is a mobile-first web app for playing Texas Hold'em with friends. A host creates a private room and shares a link. Friends request to join from their phones, signed in with Google or as a guest, and the host lets them in. FELT supports three ways to play:
+FELT is a mobile-first web app for playing Texas Hold'em with friends. A host creates a private room and shares a link. Friends request to join from their phones, after picking a username, and the host lets them in. FELT supports three ways to play:
 
 1. **Online:** FELT deals the cards and everyone plays on their own device, in the same room or remotely.
 2. **Hybrid:** a real deck on a real table, with FELT replacing the chips. Each player bets from their own phone and the host advances the streets.
@@ -22,7 +22,7 @@ Chips exist only for the length of a game. The host sets a minimum buy-in and ap
 | Learning project, public | Real product for friends & home games |
 | Persistent chip balance, buy-chips top-up | Per-game buy-ins, host-approved top-ups |
 | Global leaderboard + lifetime stats | End-of-game session recap only |
-| Email + password | Google sign-in + guest play |
+| Email + password | Guest accounts with unique usernames (Google sign-in deferred) |
 | Public room list | Private rooms; host approves every join |
 | Bot mode with hints | Practice = tutorial stage + practice-hands stage |
 | Responsive web | Mobile-first PWA |
@@ -44,6 +44,7 @@ Chips exist only for the length of a game. The host sets a minimum buy-in and ap
 - Lifetime stats, leaderboards and hand history archives.
 - Tournaments.
 - Native iOS/Android apps, since FELT ships as a PWA only.
+- **Google sign-in** (deferred to a later release; design kept in ARCHITECTURE §6).
 - **Apple sign-in.** On the web it needs a paid Apple Developer Program membership ($99/yr) to create the required Services ID. Testing doesn't need it, because the iOS Simulator (free with Xcode) and Playwright's mobile WebKit both work without an account. Apple sign-in can be added later if iPhone users ask for it.
 - **Local-network / offline multiplayer.** A browser can open a socket *to* a server, but it can't *be* a socket server, so phones on the same Wi-Fi can't talk to each other directly. The workarounds (a host phone running the game over WebRTC, or a laptop running a local server) break server-authoritative play and card privacy, so multiplayer needs internet. Practice mode runs fully on the device and works offline.
 - Voice/video chat.
@@ -77,16 +78,15 @@ Chips exist only for the length of a game. The host sets a minimum buy-in and ap
 ## 5. Features
 
 ### 5.1 Identity & usernames
-- **Sign in with Google** (Supabase Auth OAuth).
-- **Guest play:** enter a name and go. This is implemented as a Supabase anonymous session, so guests still hold a valid token.
-- Guests can create and host any room type, and can join any room.
-- **Usernames (Google accounts):** chosen once, right after the first sign-in.
+- **v1: guest accounts only.** On first visit the player picks a username and plays. Behind the scenes this is a Supabase anonymous session that persists on the device, so the same username comes back next time on that device.
+- **Google sign-in is deferred** (not in v1). When it's added, a player links Google to their existing guest account and keeps the same user ID and username. The docs keep the Google design so it can be picked up later.
+- Anyone can create and host any room type, and join any room.
+- **Usernames:** chosen once, on first visit.
   - 3–20 characters: letters, numbers and underscore.
   - Unique, case-insensitive (`Pranay` and `pranay` collide).
   - Rejected if profane, including obfuscated spellings (`a$$`, `sh1t`, spacing tricks), or if reserved (`admin`, `host`, `felt`, `support`, `guest`…).
   - Availability is checked live while typing and checked again on submit, so two people can't grab the same name at once.
-- **Guest names:** same format and profanity rules, but not globally unique (guests are throwaway). They must be unique within the room and show a "guest" tag.
-- A guest can upgrade to a Google account without losing their seat, and picks a username at that point.
+- Clearing browser data loses the guest account; the player then picks a new username. Account recovery comes with Google sign-in later.
 - Profile = username + initials avatar. Nothing else is stored in v1.
 
 ### 5.2 Rooms
@@ -100,7 +100,7 @@ Chips exist only for the length of a game. The host sets a minimum buy-in and ap
 - **Join by permission (always on):**
   1. A player opens the link (`/r/FELT-7KQ2`) or types the code, and sees a room preview (host, mode, blinds, seats taken).
   2. They tap **Request to join**.
-  3. The host gets a request card (name, guest/account tag) and taps **Admit** or **Deny**.
+  3. The host gets a request card (username) and taps **Admit** or **Deny**.
   4. If admitted, the player enters the room and picks a seat. If denied, they see a message and can't request again for 10 minutes.
   - Requests expire after 2 minutes without an answer.
   - Once admitted, a player can reconnect for the rest of the session without asking again. A kicked player must request again.

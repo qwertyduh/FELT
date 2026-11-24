@@ -22,7 +22,7 @@ React + Vite + Tailwind (PWA) · Fastify + Socket.io · Redis · Supabase (Auth 
 ### Prerequisites
 - Node.js 22+
 - Docker (for local Redis)
-- A Supabase project with Google and Anonymous sign-in enabled
+- A Supabase project with Anonymous sign-in enabled
 - CLIs: `supabase`, `vercel`, `railway`
 
 ### Setup

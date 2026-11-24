@@ -34,7 +34,7 @@ orchestrator ──spawn──▶ TESTER   stress-tests the build, replies GO or
 - **NO-GO loop:** the tester's findings go back to the same builder, and after its fix a **new tester** checks it (fresh eyes). Max 3 rounds; after that the orchestrator stops and asks the owner.
 - **Models:** the default is Sonnet for both. Use Opus for the tester on correctness-critical phases (P18–P25 engine, P30 admission, P32/P47 privacy, P43 ledger) and for the builder on P22–P25.
 
-Legend: ⬜ not started · 🟨 in progress · ✅ done · 👤 needs the owner (login, account, decision)
+Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 needs the owner (login, account, decision)
 
 ---
 
@@ -73,14 +73,14 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · 👤 needs the owner 
 - **Done when:** the first run on GitHub is green.
 - _Note: Tester GO on round 1. Two jobs: `verify` (ci, typecheck, lint, format, builds) and `docker` (image build). Uses checkout/setup-node v7. A clean-checkout run in a linux container also passed._
 
-### ⬜ P06 · Supabase schema 👤
+### 🟨 P06 · Supabase schema
 - **Needs:** P01
-- **Do:** `supabase init` (if needed), migration with `citext`, `profiles` (ARCHITECTURE §7) and RLS (select-only for authenticated users). Enable Google + anonymous sign-in in `supabase/config.toml`. 👤 The owner creates the Google OAuth client and provides its keys.
+- **Do:** `supabase init`, then a migration with `citext`, `profiles` (ARCHITECTURE §7) and RLS (select-only for authenticated users). Enable anonymous sign-in in `supabase/config.toml`. Google stays disabled (deferred).
 - **Done when:** `supabase db reset` applies cleanly; a SQL test shows an invalid-format username is rejected and `Bob`/`bob` collide.
 
 ### ⬜ P07 · Protocol: username & name schemas
 - **Needs:** P01
-- **Do:** In `packages/protocol`: a Zod `UsernameSchema` (format), `GuestNameSchema`, a `RESERVED_NAMES` list and a `UsernameCheckResult` type. Export them for web + server.
+- **Do:** In `packages/protocol`: a Zod `UsernameSchema` (format), a `RESERVED_NAMES` list and a `UsernameCheckResult` type. Export them for web + server.
 - **Done when:** unit tests cover valid, too short, too long, bad characters and reserved names.
 
 ### ⬜ P08 · Profanity filter module
@@ -95,23 +95,23 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · 👤 needs the owner 
 
 ### ⬜ P10 · Username endpoints
 - **Needs:** P07, P08, P09
-- **Do:** `GET /usernames/check`, `POST /me/username` and `GET /names/check`, following the ARCHITECTURE §6 pipeline. Claiming writes with the service role and maps a unique violation to 409. Rate-limit the check endpoint.
+- **Do:** `GET /usernames/check` and `POST /me/username`, following the ARCHITECTURE §6 pipeline. Claiming writes with the service role and maps a unique violation to 409. Rate-limit the check endpoint.
 - **Done when:** tests cover every `reason` value, a successful claim, a duplicate claim → 409, and the race (two parallel claims → exactly one 201).
 
 ### ⬜ P11 · Web auth
 - **Needs:** P02, P06
-- **Do:** Supabase client in `apps/web/src/lib`, "Continue with Google" and "Play as guest" on `/`, and an auth store (session, `isAnonymous`).
-- **Done when:** both sign-in paths work locally and the session survives a reload (screenshots).
+- **Do:** Supabase client in `apps/web/src/lib`, automatic anonymous sign-in on first visit, and an auth store (session, `userId`). Google is deferred: no button.
+- **Done when:** a first visit creates an anonymous session, and the same user ID survives a reload (screenshots).
 
 ### ⬜ P12 · Username onboarding UI
 - **Needs:** P10, P11
-- **Do:** `/onboarding`: a username input with instant format feedback (shared schema), a debounced availability check and the submit flow. Redirect Google users without a username here. Add a guest-name input for guests.
+- **Do:** `/onboarding`: a username input with instant format feedback (shared schema), a debounced availability check and the submit flow. Redirect any user without a username here.
 - **Done when:** a Playwright test covers a taken name, a profane name, a valid claim and the redirect.
 
 ### ⬜ P13 · Deploy skeleton 👤
 - **Needs:** P04, P11
 - **Do:** 👤 The owner runs `railway login` and `vercel login`. Create a Railway project with the server service (Dockerfile) and Railway Redis, a Vercel project for `apps/web`, and the production Supabase project. Set the env vars from ARCHITECTURE §12.
-- **Done when:** the production web URL loads, guest sign-in works, and the production `/health` reports Redis ok.
+- **Done when:** the production web URL loads, anonymous sign-in + username claim work, and the production `/health` reports Redis ok.
 
 ---
 
@@ -189,7 +189,7 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · 👤 needs the owner 
 ### ⬜ P27 · Create & preview room (REST)
 - **Needs:** P09, P26, P04
 - **Do:** A room code generator (`FELT-XXXX`, no ambiguous characters, collision-checked), `POST /rooms` (stores the initial room in Redis and makes the creator host + admitted) and `GET /rooms/:code`.
-- **Done when:** tests for create by an account, create by a guest, an unknown code → 404 and the preview shape.
+- **Done when:** tests for create by a user with a username, create rejected without a username, an unknown code → 404 and the preview shape.
 
 ### ⬜ P28 · Socket.io server + auth
 - **Needs:** P09, P26
@@ -203,7 +203,7 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · 👤 needs the owner 
 
 ### ⬜ P30 · Join requests (server)
 - **Needs:** P29
-- **Do:** `room:request_join`, `room:cancel_request`, `host:admit`, `room:enter`, the 2-minute request expiry, the 10-minute deny cooldown, the guest-name check (profanity + in-room uniqueness), and joining the Socket.io room only once admitted.
+- **Do:** `room:request_join`, `room:cancel_request`, `host:admit`, `room:enter`, the 2-minute request expiry, the 10-minute deny cooldown and joining the Socket.io room only once admitted.
 - **Done when:** tests cover admit, deny + cooldown, expiry, a non-host trying to admit, an admitted player reconnecting without asking again, and a requester never receiving `room:state`.
 
 ### ⬜ P31 · Seating & buy-in (server)
@@ -233,7 +233,7 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · 👤 needs the owner 
 
 ### ⬜ P36 · Web: join flow
 - **Needs:** P30, P34
-- **Do:** `/r/:code` preview → guest name (if guest) → **Request to join** → a pending screen with a countdown → admitted (enter room), denied, or expired states.
+- **Do:** `/r/:code` preview → **Request to join** → a pending screen with a countdown → admitted (enter room), denied, or expired states.
 - **Done when:** a two-browser Playwright test covers request → admit, and request → deny shows the cooldown.
 
 ### ⬜ P37 · Web: host request inbox
@@ -248,7 +248,7 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · 👤 needs the owner 
 
 ### ⬜ P39 · Web: table view
 - **Needs:** P38
-- **Do:** Render seats, names (with guest tag), stacks, current bets, pot(s), dealer button and the turn highlight from `room:state`. Read-only.
+- **Do:** Render seats, usernames, stacks, current bets, pot(s), dealer button and the turn highlight from `room:state`. Read-only.
 - **Done when:** screenshots at 375px with 2, 6 and 9 players.
 
 ### ⬜ P40 · Web: action bar
@@ -416,6 +416,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · 👤 needs the owner 
 - **Needs:** P51
 - **Do:** A script simulating 50 concurrent rooms × 6 players against staging.
 - **Done when:** p95 action latency < 150ms and no errors; results recorded here.
+
+### ⏸ P71 · Google sign-in (deferred)
+- **Needs:** P13
+- **Do:** 👤 The owner creates a Google OAuth client. Enable the provider in Supabase, add "Link Google account" to the profile using `linkIdentity`, and keep the user ID and username.
+- **Done when:** a guest links Google and, on a second device, signs in with Google to the same username.
 
 ### ⬜ P70 · Launch checklist 👤
 - **Needs:** all

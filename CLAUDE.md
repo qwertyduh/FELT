@@ -5,7 +5,7 @@ Mobile-first PWA for playing No-Limit Texas Hold'em with friends. Three modes:
 - **Hybrid:** real cards; the app tracks bets. Every player is on their own phone, and the host advances streets and awards pots.
 - **Practice:** a tutorial, then practice hands vs bots. Runs fully in the browser.
 
-Private rooms only: the host approves every join, sets the minimum buy-in, and approves top-ups. Chips are per-game; nothing persists except usernames and shared recaps. Sign-in is Google or guest.
+Private rooms only: the host approves every join, sets the minimum buy-in, and approves top-ups. Chips are per-game; nothing persists except usernames and shared recaps. Sign-in is guest-only in v1 (anonymous Supabase session + unique username); Google is deferred.
 
 - Product spec: `docs/PRD.md`
 - Technical spec: `docs/ARCHITECTURE.md` (stack, module boundaries, socket protocol, data model)
@@ -50,4 +50,4 @@ npm run typecheck && npm run lint
 ## Deploy
 - Web → Vercel (`vercel` CLI). Vercel can't host the WebSocket server.
 - Server + Redis → Railway (`railway` CLI).
-- Auth/DB → Supabase (`supabase` CLI). Providers: Google + anonymous.
+- Auth/DB → Supabase (`supabase` CLI). Provider: anonymous (Google deferred).
