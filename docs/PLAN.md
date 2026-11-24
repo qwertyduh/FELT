@@ -52,14 +52,18 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · 👤 needs the owner 
 - **Done when:** `npm run dev -w apps/web` serves every route, with a screenshot of `/` at 375px.
 - _Note: Tester GO on round 1. React 19, Vite 8, Tailwind 4, react-router 7 (imports from `react-router`), Zustand 5. Vitest config lives in `apps/web/vite.config.ts` (jsdom). Vercel will need SPA rewrites (P13)._
 
-### ⬜ P03 · Server scaffold
+### ✅ P03 · Server scaffold
 - **Needs:** P01
 - **Do:** Fastify in `apps/server`, Zod-validated env (`config/env.ts`), pino logging, `GET /health`, CORS restricted to `WEB_ORIGIN`.
 - **Done when:** a `fastify.inject` test for `/health` → 200 passes; the server boots with `npm run dev -w apps/server`.
+- _Note: Tester GO on round 1. Built with tsup (`noExternal: /^@felt\//`), and bundling of workspace packages was proven by the tester. `NODE_ENV` defaults to development, so the Dockerfile must set production. Port 3000 is taken by another local process on the dev machine._
 
-### ⬜ P04 · Docker Compose + Redis
+### 🟨 P04 · Docker Compose + Redis
 - **Needs:** P03
-- **Do:** `apps/server/Dockerfile` (multi-stage), `docker-compose.yml` with `server` + `redis:7-alpine`. Add a Redis client in `config/redis.ts`. `/health` reports Redis status.
+- **Do:** `apps/server/Dockerfile` (multi-stage), `docker-compose.yml` with `server` + `redis:7-alpine`. Add a Redis client in `config/redis.ts`. `/health` reports Redis status. Carried over from P03's tester:
+  - (a) Fix log redaction. The default `req` serializer drops headers, so the current redact paths never apply. Use redact paths that cover any logged `headers.authorization` / `headers.cookie` (e.g. `*.headers.authorization`), plus a test that logs a headers object and asserts the values are censored.
+  - (b) Load the root `.env` in dev (`tsx watch --env-file-if-exists=../../.env`), so the root `npm run dev` works without exporting vars.
+  - (c) Make the dev server port configurable, because local port 3000 may be taken.
 - **Done when:** `docker compose up` runs both services and `curl :3000/health` shows `redis: "ok"`.
 
 ### ⬜ P05 · CI
