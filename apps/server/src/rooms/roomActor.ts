@@ -1,9 +1,29 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { RoomCode } from '@felt/protocol';
-import { RoomGoneError, type RoomRecord, type RoomStore } from './roomStore';
+import { RoomGoneError, RoomRecordSchema, type RoomRecord, type RoomStore } from './roomStore';
+
+export const TASK_TIMEOUT_MS = 10_000;
+
+/** Marks code running inside a task of the given actor (re-entrant enqueue detection). */
+const running = new AsyncLocalStorage<{ actor: RoomActor; active: boolean }>();
+
+function deepFreeze<T>(v: T): T {
+  if (typeof v === 'object' && v !== null && !Object.isFrozen(v)) {
+    Object.freeze(v);
+    for (const c of Object.values(v)) deepFreeze(c);
+  }
+  return v;
+}
 
 export const MAX_QUEUE_LENGTH = 200;
 
-export type ActorErrorCode = 'queue_full' | 'disposed';
+export type ActorErrorCode =
+  | 'queue_full'
+  | 'disposed'
+  | 'invalid_record'
+  | 'invalid_task_result'
+  | 'task_timeout'
+  | 'reentrant_enqueue';
 export class RoomActorError extends Error {
   constructor(readonly code: ActorErrorCode) {
     super(code);
@@ -22,6 +42,10 @@ function isWrapped<T>(o: TaskOutcome<T>): o is { room: RoomRecord; result: T } {
 export interface RoomActorOptions {
   maxQueue?: number;
   now?: () => number;
+  /** Per-task limit. A timed-out task's late result is discarded and never persisted. */
+  taskTimeoutMs?: number;
+  /** Called when the room's key no longer exists (the actor is disposed first). */
+  onGone?: (actor: RoomActor) => void;
 }
 
 /**
@@ -36,6 +60,8 @@ export class RoomActor {
   private disposed = false;
   private readonly maxQueue: number;
   private readonly now: () => number;
+  private readonly timeoutMs: number;
+  private readonly onGone: ((a: RoomActor) => void) | undefined;
   private last: number;
 
   constructor(
@@ -46,6 +72,8 @@ export class RoomActor {
     this.room = initial;
     this.maxQueue = opts.maxQueue ?? MAX_QUEUE_LENGTH;
     this.now = opts.now ?? Date.now;
+    this.timeoutMs = opts.taskTimeoutMs ?? TASK_TIMEOUT_MS;
+    this.onGone = opts.onGone;
     this.last = this.now();
   }
 
@@ -70,6 +98,9 @@ export class RoomActor {
   }
 
   enqueue<T = void>(fn: RoomTask<T>): Promise<T> {
+    const ctx = running.getStore();
+    if (ctx?.actor === this && ctx.active)
+      return Promise.reject(new RoomActorError('reentrant_enqueue'));
     if (this.disposed) return Promise.reject(new RoomActorError('disposed'));
     if (this.pending >= this.maxQueue) return Promise.reject(new RoomActorError('queue_full'));
     this.pending += 1;
@@ -77,12 +108,48 @@ export class RoomActor {
     const run = async (): Promise<T> => {
       try {
         const before = this.room;
-        const out = await fn(before);
+        // The task gets a deep-frozen copy: in-place mutation throws and can never corrupt `before`.
+        const input = deepFreeze(structuredClone(before));
+        const token = { actor: this as RoomActor, active: true };
+        let timer: NodeJS.Timeout | undefined;
+        let out: TaskOutcome<T>;
+        try {
+          out = await Promise.race([
+            running.run(token, () => Promise.resolve(fn(input))),
+            new Promise<never>((_, rej) => {
+              timer = setTimeout(() => rej(new RoomActorError('task_timeout')), this.timeoutMs);
+            }),
+          ]);
+        } finally {
+          token.active = false; // detached work started by this task may enqueue later
+          clearTimeout(timer);
+        }
+        if (typeof out !== 'object' || out === null) {
+          throw new RoomActorError('invalid_task_result');
+        }
         const next = isWrapped(out) ? out.room : out;
         const result = (isWrapped(out) ? out.result : undefined) as T;
-        if (next === before) return result; // no change: nothing to persist
+        if (typeof next !== 'object' || next === null) {
+          throw new RoomActorError('invalid_task_result');
+        }
+        if (next === input || next === before) return result; // no change: nothing to persist
         const committed: RoomRecord = { ...next, version: before.version + 1 };
-        await this.store.save(committed); // throws -> `this.room` stays at `before`
+        if (
+          !RoomRecordSchema.safeParse(committed).success ||
+          committed.code !== before.code ||
+          committed.hostId !== before.hostId
+        ) {
+          throw new RoomActorError('invalid_record');
+        }
+        try {
+          await this.store.save(committed); // throws -> `this.room` stays at `before`
+        } catch (err) {
+          if (err instanceof RoomGoneError) {
+            this.dispose();
+            this.onGone?.(this);
+          }
+          throw err;
+        }
         this.room = committed;
         return result;
       } finally {

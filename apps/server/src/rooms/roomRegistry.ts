@@ -73,6 +73,9 @@ export class RoomRegistry {
       if (!record || this.closed) return null;
       const actor = new RoomActor(record, this.store, {
         now: () => this.clock.now(),
+        onGone: (a) => {
+          if (this.actors.get(code) === a) this.actors.delete(code);
+        },
         ...this.opts.actor,
       });
       this.actors.set(code, actor);
