@@ -275,10 +275,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Do:** `host:start` → `startHand(deck=null)`, `game:act` → engine, `host:advance_street`, `host:award` with the 5s confirm window + `host:dispute`, then the next hand after a short delay. Stacks update from the engine.
 - **Done when:** an integration test with 3 socket clients plays a hybrid hand through to award.
 
-### ⬜ P34 · Web: socket client & room store
+### ✅ P34 · Web: socket client & room store
 - **Needs:** P26, P11
 - **Do:** A typed Socket.io client with the auth token and reconnect, and a Zustand room store that applies `room:state` only when its version is newer. No UI.
 - **Done when:** unit tests cover out-of-order versions being dropped.
+- _Note: GO round 1. apps/web/src/lib/realtime: `createSocketClient` (the auth callback fetches a fresh token on every connect attempt; unauthorized/token_expired → refresh once and retry, up to 3 failures then an error state; auth_unavailable → backoff, never signs out; proactive reconnect 5 min before exp; `emitWithAck` times out to an error result instead of hanging), `useRoomStore` (applies room:state only for a newer version, schema-validated; hand:private is cleared when the hand changes), `bindRoomEvents`. Not connected anywhere yet: P36 will call connect. Verified against the real server: reconnect backoff has no storm, bad token stops after 3 refreshes. Follow-ups (non-blocking): the timeout ack uses a cast because 'timeout' isn't a protocol ErrorCode; hand:private arriving before its room:state would be dropped if the server ever orders them that way; real server-side disconnect at exp isn't tested end to end._
 
 ### ⬜ P35 · Web: create room screen
 - **Needs:** P27, P34

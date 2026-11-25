@@ -13,7 +13,7 @@ Private rooms only: the host approves every join, sets the minimum buy-in, and a
 - `DESIGN.md` is the superseded v1 plan. Don't follow it where it conflicts with `docs/`.
 
 ## Status
-Pre-scaffold. Check `docs/PLAN.md` for which phases are done. The commands below are planned; update this file once they exist.
+Rebuild in progress on branch `rebuild`. Done: P01–P29 and P34 (foundation, auth, usernames, deploy skeleton, the full pure poker engine in `packages/engine`, room protocol, room REST, Socket.io server + auth, RoomActor/registry, web socket client). Next: P30 (join requests). Check `docs/PLAN.md` for the per-phase status and notes. The commands below are the working ones; `npm run e2e` runs the Playwright onboarding test.
 
 ## Layout (npm workspaces)
 - `apps/web`: Vite + React + TS + Tailwind + Zustand PWA (Vercel)
