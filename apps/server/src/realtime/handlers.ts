@@ -87,11 +87,7 @@ export function installGuards(socket: FeltSocket, now: () => number, log: Socket
   socket.use((packet, next) => {
     const [event, ...rest] = packet as unknown[];
     const { ack } = split(rest);
-    if (typeof event !== 'string' || !Object.hasOwn(clientEventSchemas, event)) {
-      // No `next()`: the event is dropped; no listener ever sees it.
-      safeAck(ack, errorAck('invalid_payload', 'unknown event'), socket);
-      return;
-    }
+    // Rate limit first so floods of unknown events are limited (and eventually disconnected) too.
     if (!bucket.take()) {
       strikes += 1;
       safeAck(ack, errorAck('rate_limited', 'too many events'), socket);
@@ -99,6 +95,17 @@ export function installGuards(socket: FeltSocket, now: () => number, log: Socket
         log.warn({ userId: socket.data.user.userId }, 'socket disconnected for sustained abuse');
         socket.disconnect(true);
       }
+      return;
+    }
+    if (typeof event !== 'string' || !Object.hasOwn(clientEventSchemas, event)) {
+      // No `next()`: the event is dropped; no listener ever sees it.
+      safeAck(ack, errorAck('invalid_payload', 'unknown event'), socket);
+      return;
+    }
+    // A real event nobody handles yet must still be answered. Reuses `internal` (no dedicated
+    // not_implemented code in the protocol; documented decision).
+    if ((socket as unknown as Socket).listeners(event).length === 0) {
+      safeAck(ack, errorAck('internal', 'not implemented'), socket);
       return;
     }
     strikes = 0;

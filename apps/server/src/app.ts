@@ -19,6 +19,8 @@ import { attachRealtime, type Timers } from './realtime';
 import { registerRoomRoutes } from './rooms/routes';
 import type { RoomRedis } from './rooms/redis';
 import type { RandomInt } from './rooms/code';
+import { RoomStore } from './rooms/roomStore';
+import { RoomRegistry } from './rooms/roomRegistry';
 
 function hasPinoPretty(): boolean {
   try {
@@ -174,6 +176,19 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
       ...(deps.realtimeTimers ? { timers: deps.realtimeTimers } : {}),
     }),
   );
+  // Room actors; null when Redis lacks the room commands (same optional pattern as the routes).
+  const r = deps.redis as Partial<RoomRedis>;
+  const roomRegistry =
+    typeof r.get === 'function' && typeof r.set === 'function'
+      ? new RoomRegistry(new RoomStore(r as RoomRedis), {
+          // Rooms with connected sockets are never evicted (refined when room membership lands).
+          isRoomActive: () => app.realtime.connectedCount() > 0,
+        })
+      : null;
+  app.decorate('roomRegistry', roomRegistry);
+  app.addHook('onClose', async () => {
+    await roomRegistry?.dispose();
+  });
   registerAuth(app, verify); // after CORS (preflight is answered first); default-deny from here on
   registerHealth(app, deps.redis);
   const db = deps.db !== undefined ? deps.db : createDbFromEnv(env);
@@ -199,4 +214,10 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
   });
 
   return app;
+}
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    roomRegistry: RoomRegistry | null;
+  }
 }

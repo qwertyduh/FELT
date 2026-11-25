@@ -90,6 +90,13 @@ export function newRoomRecord(
 export type CreateOutcome =
   { kind: 'created'; record: RoomRecord } | { kind: 'too_many_rooms' } | { kind: 'code_exhausted' };
 
+export class RoomGoneError extends Error {
+  constructor() {
+    super('room no longer exists');
+    this.name = 'RoomGoneError';
+  }
+}
+
 export class RoomStore {
   constructor(
     private readonly redis: RoomRedis,
@@ -147,6 +154,17 @@ export class RoomStore {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Persist `record` (caller has already bumped `version`) with a refreshed TTL. XX: a room whose
+   * key expired or was deleted is never resurrected; that throws RoomGoneError.
+   */
+  async save(record: RoomRecord): Promise<void> {
+    const ok = await bounded(() =>
+      this.redis.set(roomKey(record.code), JSON.stringify(record), 'EX', ROOM_TTL_SECONDS, 'XX'),
+    );
+    if (ok !== 'OK') throw new RoomGoneError();
   }
 
   /** Refresh the TTL on activity. */
