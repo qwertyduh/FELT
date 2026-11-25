@@ -42,6 +42,8 @@ export interface AuthUser {
   userId: string;
   isAnonymous: boolean;
   sessionId?: string;
+  /** Token expiry, epoch seconds (always present: `exp` is a required claim). */
+  exp: number;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -129,6 +131,7 @@ export function createVerifier(opts: VerifierOptions): (token: string) => Promis
     const user: AuthUser = {
       userId: payload.sub.toLowerCase(),
       isAnonymous: payload.is_anonymous === true,
+      exp: payload.exp as number,
     };
     if (typeof payload.session_id === 'string' && UUID_RE.test(payload.session_id)) {
       user.sessionId = payload.session_id.toLowerCase();

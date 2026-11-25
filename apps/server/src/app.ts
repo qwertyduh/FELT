@@ -15,6 +15,7 @@ import { registerHealth } from './http/health';
 import { registerMe } from './http/me';
 import { createDbFromEnv, type Db } from './db/supabase';
 import { registerUsernameRoutes } from './usernames/routes';
+import { attachRealtime, type Timers } from './realtime';
 import { registerRoomRoutes } from './rooms/routes';
 import type { RoomRedis } from './rooms/redis';
 import type { RandomInt } from './rooms/code';
@@ -41,6 +42,8 @@ export interface AppDeps {
    * `null` (or no key): `/me` and the username routes answer 503 `db_unavailable`.
    */
   db?: Db | null;
+  /** Clock/timer for socket token-expiry disconnects; tests inject fakes. */
+  realtimeTimers?: Timers;
 }
 
 /**
@@ -163,6 +166,14 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
     issuer: issuerFor(env.SUPABASE_URL),
     keySet: deps.keySet ?? createRemoteKeySet(env.SUPABASE_JWKS_URL),
   });
+  app.decorate(
+    'realtime',
+    attachRealtime(app, {
+      verify,
+      origins: env.WEB_ORIGIN,
+      ...(deps.realtimeTimers ? { timers: deps.realtimeTimers } : {}),
+    }),
+  );
   registerAuth(app, verify); // after CORS (preflight is answered first); default-deny from here on
   registerHealth(app, deps.redis);
   const db = deps.db !== undefined ? deps.db : createDbFromEnv(env);

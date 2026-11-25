@@ -242,10 +242,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests for create by a user with a username, create rejected without a username, an unknown code → 404 and the preview shape.
 - _Note: GO round 1. `POST /rooms` and `GET /rooms/:code` in apps/server/src/rooms. Room record in Redis `room:{code}` with a 2h TTL, created atomically with SET NX. Per-host cap of 5 open rooms (fails closed under contention). Rate limits: 10 creates/min and 60 previews/min per user. Redis errors → 503 within 2s. Verified against real Redis. Follow-ups (non-blocking): extend the code denylist (KKKK, NGGR, FCUK, SHTT, BTCH, CNTS, PUSS, TARD, JEWS, PUTA, SCUM… and drop the entries that can't be emitted); the TTL test should assert the literal 7200; there's no concurrency test for the cap; `requests`/`seats`/`ledger` sub-schemas are provisional for P30–P32._
 
-### ⬜ P28 · Socket.io server + auth
+### ✅ P28 · Socket.io server + auth
 - **Needs:** P09, P26
 - **Do:** Attach Socket.io to Fastify, add JWT `io.use()` middleware, restrict the origin, and Zod-validate every incoming event (with a typed handler helper). (From the P09 tester: re-verify on token refresh and disconnect at token `exp`, and never log handshake URLs or query strings.)
 - **Done when:** tests show an unauthenticated connection is rejected, an invalid payload gets an error ack, and a valid connection succeeds.
+- _Note: GO round 1. `app.realtime` in apps/server/src/realtime attaches Socket.io to Fastify. Auth takes the token from `handshake.auth.token` only, through the same strict verifier as HTTP. Origin allow-list; a missing Origin is allowed (the JWT is the gate). The socket disconnects at the token's `exp`. `onClientEvent` validates payloads and returns error acks. Per-socket token bucket (20/s, burst 40). Verified end to end against real Supabase and Redis. To fix at the start of P29: N1, a real event name with no registered handler never gets an ack (add a fallback: ack not_implemented, or validate and ack invalid_payload); N2, unknown events bypass the rate limit (take a token before the unknown-event check). Also: no per-user connection cap (P29/P30); tests for logging of handshake.auth and Origin lookalikes; the web client (P34) must refresh the token ~5 min early and reconnect, handling unauthorized/token_expired/auth_unavailable; there is no protocol event for in-socket token refresh; real-token `exp` disconnect is only covered by a fake-timer test._
 
 ### ⬜ P29 · RoomActor & registry
 - **Needs:** P27, P28
