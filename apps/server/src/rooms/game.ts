@@ -21,12 +21,11 @@ import {
   type Result,
   type Transition,
 } from '@felt/engine';
-import type { ClientEventPayload, ErrorCode } from '@felt/protocol';
+import { AWARD_CONFIRM_MS, type ClientEventPayload, type ErrorCode } from '@felt/protocol';
 import type { Game, GameHand } from './gameSchema';
 import type { RoomRecord } from './roomStore';
 import { leaveSeat, type SeatResult } from './seating';
 
-export const AWARD_CONFIRM_MS = 5_000;
 export const NEXT_HAND_DELAY_MS = 5_000;
 
 export interface GameContext {
@@ -281,6 +280,9 @@ export function advance(
   if (found.hand.state.street !== intent.street) {
     return refuse(room, 'stale_hand', 'that street has already been dealt');
   }
+  if (intent.turnSeq !== (found.hand.turnSeq ?? 0)) {
+    return refuse(room, 'stale_hand', 'the table has moved on');
+  }
   const r = applyHostAction(found.hand.state, {
     type: 'advance_street',
     ...(intent.cards ? { cards: intent.cards } : {}),
@@ -294,10 +296,21 @@ const awardKey = (awards: readonly Award[]): string =>
     awards.map((a) => [a.potId, [...a.winners].sort()]).sort((a, b) => (a[0]! < b[0]! ? -1 : 1)),
   );
 
+/** A new or newly disputed proposal is a change to the hand, so it moves `turnSeq`. */
+const withProposal = (
+  room: Readonly<RoomRecord>,
+  hand: GameHand,
+  proposal: GameHand['proposal'],
+): RoomRecord => ({
+  ...room,
+  game: { ...room.game!, hand: { ...hand, proposal, turnSeq: (hand.turnSeq ?? 0) + 1 } },
+});
+
 /**
  * `host:award`: propose the whole result (every pot at once). Nothing moves until it has stood
- * for the dispute window. Sending the same result again changes nothing (no timer reset) unless
- * it was disputed; a different one replaces it and restarts the window.
+ * for the dispute window. Sending the result already pending changes nothing (no timer reset).
+ * Anything else must quote the current `turnSeq`, which proposing and disputing both bump: so a
+ * late duplicate cannot undo a dispute, and a stale screen cannot replace a newer proposal.
  */
 export function proposeAward(
   room: Readonly<RoomRecord>,
@@ -310,6 +323,11 @@ export function proposeAward(
   const found = current(room, intent.handId);
   if ('refused' in found) return found.refused;
   const { hand } = found;
+  const old = hand.proposal;
+  if (old && !old.disputed && awardKey(old.awards) === awardKey(intent.awards)) return done(room);
+  if (intent.turnSeq !== (hand.turnSeq ?? 0)) {
+    return refuse(room, 'stale_hand', 'the table has moved on');
+  }
   // Dry run on the engine: winners eligible, pots known, none twice.
   let state = hand.state;
   for (const award of intent.awards) {
@@ -320,17 +338,18 @@ export function proposeAward(
   if (state.street !== 'ended') {
     return refuse(room, 'invalid_winners', 'choose the winners of every pot');
   }
-  const old = hand.proposal;
-  if (old && !old.disputed && awardKey(old.awards) === awardKey(intent.awards)) return done(room);
   const proposal = {
     awards: intent.awards.map((a) => ({ potId: a.potId, winners: [...a.winners] })),
     confirmAt: ctx.now + AWARD_CONFIRM_MS,
     disputed: false,
   };
-  return done({ ...room, game: { ...room.game!, hand: { ...hand, proposal } } });
+  return done(withProposal(room, hand, proposal));
 }
 
-/** `host:dispute`: any seated player blocks the pending result until the host proposes again. */
+/**
+ * `host:dispute`: any seated player, or the host (to correct a mis-tap), blocks the pending result
+ * until the host proposes again.
+ */
 export function dispute(
   room: Readonly<RoomRecord>,
   userId: string,
@@ -338,7 +357,7 @@ export function dispute(
 ): GameResult {
   const gated = gate(room, userId);
   if (gated) return gated;
-  if (!room.seats.some((s) => s.userId === userId)) {
+  if (room.hostId !== userId && !room.seats.some((s) => s.userId === userId)) {
     return refuse(room, 'not_seated', 'only seated players can dispute');
   }
   const found = current(room, intent.handId);
@@ -346,8 +365,7 @@ export function dispute(
   const { proposal } = found.hand;
   if (!proposal) return refuse(room, 'illegal_action', 'there is no award to dispute');
   if (proposal.disputed) return done(room);
-  const hand = { ...found.hand, proposal: { ...proposal, disputed: true } };
-  return done({ ...room, game: { ...room.game!, hand } });
+  return done(withProposal(room, found.hand, { ...proposal, disputed: true }));
 }
 
 /**

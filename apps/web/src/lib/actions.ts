@@ -3,7 +3,7 @@
  * (`hand.options`, built by the engine); this only suggests sizes inside that range and words the
  * refusals.
  */
-import type { ErrorPayload, GameActPayload, TurnOptions } from '@felt/protocol';
+import type { ClientEventName, ErrorPayload, GameActPayload, TurnOptions } from '@felt/protocol';
 
 export type RaiseOptions = NonNullable<TurnOptions['raise']>;
 
@@ -44,27 +44,33 @@ export const actPayload = (handId: string, turnSeq: number, move: Move): GameAct
   ...move,
 });
 
-export function actFailure({ code }: ErrorPayload): string {
+/** Short enough to share the bar's line with "To call N" on a 320px screen. */
+export function actFailure({ code }: ErrorPayload, event: ClientEventName = 'game:act'): string {
+  if (event === 'host:dispute' && (code === 'hand_ended' || code === 'stale_hand')) {
+    return 'Too late: already paid.';
+  }
   switch (code as string) {
     case 'stale_hand':
     case 'not_your_turn':
     case 'hand_ended':
     case 'no_hand':
     case 'awaiting_host':
-      return 'The table moved on. Check it first.';
+      return 'Table moved on. Check it.';
     case 'bet_too_small':
     case 'raise_too_small':
     case 'bet_exceeds_stack':
     case 'invalid_amount':
     case 'illegal_action':
-      return "The table didn't allow that.";
+    case 'invalid_winners':
+    case 'invalid_cards':
+      return "The table didn't allow it.";
     case 'room_paused':
       return 'The game is paused.';
     case 'rate_limited':
-      return 'Too many taps. Wait a moment.';
+      return 'Too fast. Wait a moment.';
     case 'timeout':
-      return 'No answer. Check the table first.';
+      return 'No answer. Check the table.';
     default:
-      return "Couldn't send that. Try again.";
+      return 'Not sent. Try again.';
   }
 }

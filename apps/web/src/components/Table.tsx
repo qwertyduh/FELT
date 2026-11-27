@@ -6,9 +6,10 @@
  * It fills the height its parent can spare (never less than the seats need), so an action bar or
  * the request cards below simply leave it less.
  */
+import { useEffect, useRef } from 'react';
 import type { PublicRoomState, PublicSeat } from '@felt/protocol';
 import { chips, shortChips } from '../lib/seating';
-import { potTotal, seatPosition, streetName, turnLine } from '../lib/table';
+import { potName, potTotal, seatPosition, streetName, turnLine } from '../lib/table';
 
 /** Fixed box, positioned by `seatPosition`. */
 const SEAT =
@@ -144,7 +145,7 @@ function Middle({ room }: { room: PublicRoomState }) {
         <ul aria-label="Pots" className="mt-1 flex flex-wrap justify-center gap-x-2 text-xs">
           {hand.pots.map((pot, i) => (
             <li key={pot.id} className="whitespace-nowrap text-cream/75 tabular-nums">
-              {i === 0 ? 'Main' : `Side ${i}`} {shortChips(pot.amount, 100_000)}
+              {potName(i, hand.pots.length)} {shortChips(pot.amount, 100_000)}
             </li>
           ))}
         </ul>
@@ -166,8 +167,27 @@ export function Table({
   onPick: ((seat: number) => void) | null;
 }) {
   const count = room.seats.length;
+  const mine = room.seats.findIndex((s) => s?.userId === userId);
+  const focus = room.hand?.currentActor ?? (mine < 0 ? null : mine);
+  const table = useRef<HTMLDivElement>(null);
+  // Squeezed (request cards on a short screen) the table's parent scrolls: keep whoever is to act,
+  // or else the viewer, in sight. Again whenever the room for it changes.
+  useEffect(() => {
+    const parent = table.current?.parentElement;
+    if (focus === null || !parent) return;
+    const reveal = () =>
+      table.current
+        ?.querySelector(`[data-testid="seat-${focus}"]`)
+        ?.scrollIntoView?.({ block: 'nearest' });
+    reveal();
+    if (typeof ResizeObserver === 'undefined') return;
+    const watch = new ResizeObserver(reveal);
+    watch.observe(parent);
+    return () => watch.disconnect();
+  }, [focus]);
   return (
     <div
+      ref={table}
       data-testid="table"
       className="relative max-h-[32rem] min-h-64 w-full flex-1 shrink-0 [--seat-w:4.25rem] min-[360px]:[--seat-w:5rem]"
     >

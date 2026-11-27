@@ -273,9 +273,11 @@ function EnteredScreen({
         compact={room !== null && room.status !== 'lobby'}
       />
       {/* Last on the screen, so nothing above can move it. */}
-      {room && mine && (room.status === 'playing' || room.status === 'paused') && (
-        <ActionBar room={room} me={mine} ready={online} client={client} />
-      )}
+      {room &&
+        (mine || room.hostId === userId) &&
+        (room.status === 'playing' || room.status === 'paused') && (
+          <ActionBar room={room} userId={userId} me={mine} ready={online} client={client} />
+        )}
     </div>
   );
 }

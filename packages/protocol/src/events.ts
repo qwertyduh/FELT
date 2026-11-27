@@ -101,6 +101,9 @@ export const GameActPayloadSchema = z.discriminatedUnion('type', [
 ]);
 export type GameActPayload = z.infer<typeof GameActPayloadSchema>;
 
+/** Hybrid: how long a proposed award stands, open to dispute, before it is paid. */
+export const AWARD_CONFIRM_MS = 5_000;
+
 export const CHAT_MAX_LENGTH = 200;
 /** Allow-list for quick reactions (decision: PRD/ARCH leave the set open). */
 export const REACTION_EMOJIS = ['👍', '👏', '😂', '😮', '😭', '😡', '🔥', '🙏'] as const;
@@ -128,18 +131,25 @@ export const clientEventSchemas = {
   'host:mute': z.object({ userId: UserIdSchema, muted: z.boolean() }).strict(),
   /**
    * `street` is the street the host is advancing FROM. Without it a double tap during an all-in
-   * run-out (nobody left to bet) would advance two streets.
+   * run-out (nobody left to bet) would advance two streets. `turnSeq` is the `room:state` value
+   * the host was looking at, as for `game:act`.
    */
   'host:advance_street': z
     .object({
       handId,
+      turnSeq,
       street: z.enum(['preflop', 'flop', 'turn', 'river']),
       cards: z.array(CardSchema).min(1).max(3).optional(),
     })
     .strict(),
+  /**
+   * `turnSeq` ties the result to the pots the host was looking at: if the hand has changed since
+   * (including another proposal or a dispute) it is refused as `stale_hand`.
+   */
   'host:award': z
     .object({
       handId,
+      turnSeq,
       awards: z
         .array(
           z

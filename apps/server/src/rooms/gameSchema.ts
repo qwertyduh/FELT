@@ -85,7 +85,7 @@ export const GameSchema = z.strictObject({
   hand: z
     .strictObject({
       handId: Id,
-      /** Bumped on every engine step (P40). Absent on hands stored before it existed: 0. */
+      /** Bumped on every engine step (P40) and award proposal or dispute (P41). Absent on hands stored before it existed: 0. */
       turnSeq: z.number().int().min(0).optional(),
       state: EngineHandSchema,
       /** Dealt-in players who gave up their seat during this hand. */

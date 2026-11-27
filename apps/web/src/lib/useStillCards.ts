@@ -32,7 +32,8 @@ export function useStillCards<T extends HTMLElement>(active: boolean, settleMs: 
       if (card.until > now) waiting.push(id);
     }
     for (const id of seen.current.keys()) if (!present.has(id)) seen.current.delete(id);
-    setHeld(waiting.join(' '));
+    // Newline, not space: a button's id may hold its label.
+    setHeld(waiting.join('\n'));
   }, [settleMs]);
 
   // Before paint, so a card is never shown tappable in a place it has only just reached.
@@ -49,7 +50,7 @@ export function useStillCards<T extends HTMLElement>(active: boolean, settleMs: 
 
   return {
     list,
-    held: new Set(held.split(' ')),
+    held: new Set(held.split('\n')),
     /** Asked at the moment of the tap, in case the card moved since the last frame. */
     isStill(id: string): boolean {
       measure();

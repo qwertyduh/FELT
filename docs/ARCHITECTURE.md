@@ -244,9 +244,9 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | `host:kick` | `{ userId }` | Host |
 | `host:transfer` | `{ userId }` | Host |
 | `host:mute` | `{ userId, muted }` | Host |
-| `host:advance_street` | `{ handId, cards? }` | Host, hybrid |
-| `host:award` | `{ handId, awards: [{ potId, winners }] }` | Host, hybrid |
-| `host:dispute` | `{ handId }` | Any seated player, during the 5s award window |
+| `host:advance_street` | `{ handId, turnSeq, street, cards? }` | Host, hybrid |
+| `host:award` | `{ handId, turnSeq, awards: [{ potId, winners }] }` (every pot) | Host, hybrid |
+| `host:dispute` | `{ handId }` | Any seated player or the host, during the 5s award window |
 | `host:undo` | `{ handId }` | Host, hybrid |
 | `host:adjust_stack` | `{ userId, amount, reason }` | Host, hybrid |
 | `chat:send` | `{ text }` (≤ 200 chars) | Seated player |

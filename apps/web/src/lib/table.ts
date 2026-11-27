@@ -48,6 +48,9 @@ export function potTotal(room: PublicRoomState): number {
   return collected + room.seats.reduce((sum, s) => sum + (s?.bet ?? 0), 0);
 }
 
+export const potName = (index: number, count: number) =>
+  index > 0 ? `Side ${index}` : count > 1 ? 'Main' : 'Pot';
+
 /** What this player must put in to call, or null when they have no decision left in this hand. */
 export function toCall(hand: PublicHand | null, me: PublicSeat): number | null {
   if (!hand || hand.street === 'ended' || me.handStatus !== 'active') return null;
@@ -81,7 +84,11 @@ export function turnLine(room: PublicRoomState, userId: string): string {
   if (hand.pendingAwards.length > 0) return 'Awarding the pot';
   const actor = hand.currentActor === null ? null : room.seats[hand.currentActor];
   if (actor) return actor.userId === userId ? 'Your turn' : `${actor.username}'s turn`;
-  if (hand.street === 'showdown') return 'Waiting for the host to pick the winner';
+  const hosting = room.hostId === userId;
+  if (hand.street === 'showdown') {
+    return hosting ? 'Pick the winners' : 'Waiting for the host to pick the winner';
+  }
   const next = NEXT_DEAL[hand.street];
+  if (hosting) return next ? `Deal the ${next}` : 'Betting is done';
   return next ? `Waiting for the host to deal the ${next}` : 'Waiting for the host';
 }

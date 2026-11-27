@@ -321,10 +321,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** Playwright plays a hybrid hand to the river through the UI.
 - _Note: GO. Added engine legalActions, hand.turnSeq (required on game:act, so web and server must deploy together) and hand.options. Owner calls: no typed bet amount (slider and presets only); Fold stays offered with no confirm when Check is free; raise hidden when all opponents are all-in. P42 must never restore an older turnSeq on undo. Folded into P41: error notice hides To call; All-in label means two different amounts; taps silently ignored after a lost ack; own seat clipped at 320x568 with a request card._
 
-### ⬜ P41 · Web: hybrid host controls
+### ✅ P41 · Web: hybrid host controls
 - **Needs:** P40
 - **Do:** A "Flop / Turn / River dealt" advance button, the optional community-card entry, and the award UI (pick winner(s) per pot), plus the 5s confirm banner with a Dispute button for players.
 - **Done when:** Playwright plays a hand including a side pot through to award.
+- _Note: GO. turnSeq now required on host:advance_street and host:award. An unseated host may dispute. Owner calls: recorded community cards are stored but shown nowhere; an award that expires while the server is down is paid on reload with no new window. Folded into P42: award winner names truncate (money choice), disputed banner covers the screen with no way to see the table, award sheet picks lost when a folded player leaves._
 
 ### ⬜ P42 · Hybrid undo & stack adjust
 - **Needs:** P41
