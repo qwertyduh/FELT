@@ -156,6 +156,8 @@ Test priorities: side pots with 3+ all-ins, split pots, min-raise edge cases, he
 On server boot, the registry lazily rehydrates an actor from Redis when the first socket for that room connects. Timers resume from stored deadlines (epoch ms), not from remaining-seconds counters.
 
 - **Keep-alive:** a connected room (not an ended one) has its TTL refreshed on `room:enter` and every 5 minutes (`EXPIRE`, so a gone room stays gone), along with its members' open-rooms sets.
+- **Saves are compare-and-set** on the record's `version` (Lua). On a conflict the actor is disposed, queued tasks are rejected, the caller gets a retryable `internal` error, and the room is loaded again and published. After a save that failed ambiguously, the stored version is checked before the next task.
+- **A record that fails the schema** is not "missing": it is left untouched, logged, and reported as unavailable (503 / `internal`).
 
 ### Scaling
 v1 runs **one server instance**, because the in-process actor model requires all of a room's sockets to reach the same process. To scale out later: add the Socket.io Redis adapter plus routing by room code. That isn't needed at friends-and-home-games scale.

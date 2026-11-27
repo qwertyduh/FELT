@@ -149,10 +149,55 @@ export class RoomGoneError extends Error {
   }
 }
 
+/** The stored version is not the one the change was made from: somebody else has written. */
+export class RoomConflictError extends Error {
+  constructor() {
+    super('room changed elsewhere');
+    this.name = 'RoomConflictError';
+  }
+}
+
+/**
+ * The key exists but does not hold a record this server understands (e.g. written by a newer one
+ * before a rollback). The room is not gone: it is left untouched and reported as unavailable.
+ */
+export class RoomRecordInvalidError extends RoomStoreUnavailableError {
+  constructor() {
+    super('invalid_record');
+    this.name = 'RoomRecordInvalidError';
+  }
+}
+
+/**
+ * Compare-and-set on the record's `version`. KEYS[1] room key; ARGV: expected version, new record,
+ * TTL seconds ('' keeps the TTL).
+ */
+export const SAVE_SCRIPT = `
+local current = redis.call('GET', KEYS[1])
+if not current then return 'gone' end
+local ok, doc = pcall(cjson.decode, current)
+if not ok or type(doc) ~= 'table' or doc.version ~= tonumber(ARGV[1]) then return 'conflict' end
+if ARGV[3] == '' then
+  redis.call('SET', KEYS[1], ARGV[2], 'KEEPTTL')
+else
+  redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
+end
+return 'ok'
+`;
+
+export interface RoomStoreOptions {
+  randomInt?: RandomInt;
+  now?: () => number;
+  log?: { error(obj: Record<string, unknown>, msg: string): void };
+}
+
 export class RoomStore {
+  /** Rooms already reported as unreadable (timers retry them every few seconds). */
+  private readonly reported = new Set<string>();
+
   constructor(
     private readonly redis: RoomRedis,
-    private readonly opts: { randomInt?: RandomInt; now?: () => number } = {},
+    private readonly opts: RoomStoreOptions = {},
   ) {}
 
   /** Open rooms of a user; prunes codes whose record has expired. */
@@ -196,32 +241,48 @@ export class RoomStore {
     return { kind: 'code_exhausted' };
   }
 
-  /** Null when missing or the stored value fails validation. */
+  /** Null when missing. Throws RoomRecordInvalidError when the stored value fails validation. */
   async get(code: RoomCode): Promise<RoomRecord | null> {
     const raw = await bounded(() => this.redis.get(roomKey(code)));
     if (raw === null) return null;
+    let issues = ['not_json'];
     try {
       const parsed = RoomRecordSchema.safeParse(JSON.parse(raw));
-      return parsed.success ? parsed.data : null;
+      if (parsed.success) {
+        this.reported.delete(code);
+        return parsed.data;
+      }
+      // Top-level field and kind of problem only: deeper paths and values can name users.
+      issues = parsed.error.issues.slice(0, 5).map((i) => `${String(i.path[0] ?? '')}:${i.code}`);
     } catch {
-      return null;
+      /* not JSON */
     }
+    if (!this.reported.has(code)) {
+      this.reported.add(code);
+      this.opts.log?.error({ code, issues }, 'stored room record is invalid; left untouched');
+    }
+    throw new RoomRecordInvalidError();
   }
 
   /**
-   * Persist `record` (caller has already bumped `version`) with a refreshed TTL. XX: a room whose
-   * key expired or was deleted is never resurrected; that throws RoomGoneError.
+   * Persist `record` (caller has already bumped `version`) with a refreshed TTL, only over the
+   * version it was made from. Otherwise: RoomConflictError, or RoomGoneError for a room whose key
+   * expired or was deleted (never resurrected).
    * `keepTtl`: a write that is not activity (presence) must not extend the room's life.
    */
   async save(record: RoomRecord, opts: { keepTtl?: boolean } = {}): Promise<void> {
-    const key = roomKey(record.code);
-    const value = JSON.stringify(record);
-    const ok = await bounded(() =>
-      opts.keepTtl
-        ? this.redis.set(key, value, 'KEEPTTL', 'XX')
-        : this.redis.set(key, value, 'EX', ROOM_TTL_SECONDS, 'XX'),
+    const out = await bounded(() =>
+      this.redis.eval(
+        SAVE_SCRIPT,
+        1,
+        roomKey(record.code),
+        record.version - 1,
+        JSON.stringify(record),
+        opts.keepTtl ? '' : ROOM_TTL_SECONDS,
+      ),
     );
-    if (ok !== 'OK') throw new RoomGoneError();
+    if (out === 'gone') throw new RoomGoneError();
+    if (out !== 'ok') throw new RoomConflictError();
   }
 
   /**

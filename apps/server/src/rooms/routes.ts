@@ -27,6 +27,7 @@ export interface RoomRouteDeps {
 const REQUIRED: (keyof RoomRedis)[] = [
   'set',
   'get',
+  'eval',
   'del',
   'expire',
   'exists',
@@ -62,7 +63,10 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomRouteDeps): v
   const redis = deps.redis;
   const store =
     redis && REQUIRED.every((m) => typeof redis[m] === 'function')
-      ? new RoomStore(redis as RoomRedis, deps.randomInt ? { randomInt: deps.randomInt } : {})
+      ? new RoomStore(redis as RoomRedis, {
+          log: app.log,
+          ...(deps.randomInt ? { randomInt: deps.randomInt } : {}),
+        })
       : null;
   const origin = deps.webOrigin[0] ?? '';
 

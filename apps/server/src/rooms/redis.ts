@@ -1,10 +1,8 @@
 /** The slice of ioredis the room layer uses; tests inject an in-memory fake. */
 export interface RoomRedis {
   set(key: string, value: string, ex: 'EX', seconds: number, nx: 'NX'): Promise<'OK' | null>;
-  /** Overwrite an existing key only (never resurrects an expired room); null when it is gone. */
-  set(key: string, value: string, ex: 'EX', seconds: number, xx: 'XX'): Promise<'OK' | null>;
-  /** Same, leaving the key's remaining TTL alone. */
-  set(key: string, value: string, ttl: 'KEEPTTL', xx: 'XX'): Promise<'OK' | null>;
+  /** A Lua script, run atomically (rooms are saved with one: roomStore.ts). */
+  eval(script: string, numKeys: number, ...args: (string | number)[]): Promise<unknown>;
   get(key: string): Promise<string | null>;
   del(...keys: string[]): Promise<number>;
   expire(key: string, seconds: number): Promise<number>;

@@ -1,6 +1,12 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { RoomCode } from '@felt/protocol';
-import { RoomGoneError, RoomRecordSchema, type RoomRecord, type RoomStore } from './roomStore';
+import {
+  RoomConflictError,
+  RoomGoneError,
+  RoomRecordSchema,
+  type RoomRecord,
+  type RoomStore,
+} from './roomStore';
 
 export const TASK_TIMEOUT_MS = 10_000;
 
@@ -47,6 +53,11 @@ export interface RoomActorOptions {
   /** Called when the room's key no longer exists (the actor is disposed first). */
   onGone?: (actor: RoomActor) => void;
   /**
+   * Called when somebody else has written the room (the actor is disposed first): its state is
+   * out of date and must be loaded again.
+   */
+  onConflict?: (actor: RoomActor) => void;
+  /**
    * Called synchronously right after each committed (persisted) change, before the next task can
    * start, so calls arrive in version order. `before` is the state the change replaced. An error
    * never fails the task (the change is already saved); it goes to `onCommitError`.
@@ -65,7 +76,9 @@ export interface EnqueueOptions {
 /**
  * Serial FIFO queue for one room. State only changes through `enqueue`; a task's new state is
  * persisted (version + 1, TTL refreshed) BEFORE it becomes visible, so a persistence failure
- * leaves memory (and Redis) at the pre-task state and rejects that task only.
+ * leaves memory at the pre-task state and rejects that task only. A failed write may still have
+ * reached Redis, so the stored version is checked before the next task; whenever it is not the
+ * actor's own, the actor is finished and every task it still holds is rejected unrun.
  */
 export class RoomActor {
   private room: RoomRecord;
@@ -76,13 +89,17 @@ export class RoomActor {
   private readonly now: () => number;
   private readonly timeoutMs: number;
   private readonly onGone: ((a: RoomActor) => void) | undefined;
+  private readonly onConflict: ((a: RoomActor) => void) | undefined;
+  /** A save failed without saying whether it was applied. */
+  private unsure = false;
+  private conflicted = false;
   private readonly onCommit: RoomActorOptions['onCommit'];
   private readonly onCommitError: RoomActorOptions['onCommitError'];
   private last: number;
 
   constructor(
     initial: RoomRecord,
-    private readonly store: Pick<RoomStore, 'save'>,
+    private readonly store: Pick<RoomStore, 'save'> & Partial<Pick<RoomStore, 'get'>>,
     opts: RoomActorOptions = {},
   ) {
     this.room = initial;
@@ -90,6 +107,7 @@ export class RoomActor {
     this.now = opts.now ?? Date.now;
     this.timeoutMs = opts.taskTimeoutMs ?? TASK_TIMEOUT_MS;
     this.onGone = opts.onGone;
+    this.onConflict = opts.onConflict;
     this.onCommit = opts.onCommit;
     this.onCommitError = opts.onCommitError;
     this.last = this.now();
@@ -125,6 +143,8 @@ export class RoomActor {
     this.last = this.now();
     const run = async (): Promise<T> => {
       try {
+        if (this.conflicted) throw new RoomConflictError();
+        if (this.unsure) await this.verify();
         const before = this.room;
         // The task gets a deep-frozen copy: in-place mutation throws and can never corrupt `before`.
         const input = deepFreeze(structuredClone(before));
@@ -162,10 +182,9 @@ export class RoomActor {
         try {
           await this.store.save(committed, opts); // throws -> `this.room` stays at `before`
         } catch (err) {
-          if (err instanceof RoomGoneError) {
-            this.dispose();
-            this.onGone?.(this);
-          }
+          if (err instanceof RoomGoneError) this.gone();
+          else if (err instanceof RoomConflictError) this.conflict();
+          else this.unsure = true;
           throw err;
         }
         this.room = committed;
@@ -186,6 +205,33 @@ export class RoomActor {
     return p;
   }
 
+  private gone(): void {
+    this.dispose();
+    this.onGone?.(this);
+  }
+
+  private conflict(): void {
+    this.conflicted = true;
+    this.dispose();
+    this.onConflict?.(this);
+  }
+
+  /** Throws unless what is stored is still the version this actor holds. */
+  private async verify(): Promise<void> {
+    if (this.store.get) {
+      const stored = await this.store.get(this.room.code);
+      if (!stored) {
+        this.gone();
+        throw new RoomGoneError();
+      }
+      if (stored.version !== this.room.version) {
+        this.conflict();
+        throw new RoomConflictError();
+      }
+    }
+    this.unsure = false;
+  }
+
   /** Resolves once everything queued so far has settled. */
   drain(): Promise<void> {
     return this.tail.then(() => undefined);
@@ -197,4 +243,4 @@ export class RoomActor {
   }
 }
 
-export { RoomGoneError };
+export { RoomConflictError, RoomGoneError };

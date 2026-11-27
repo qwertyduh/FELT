@@ -138,6 +138,29 @@ export class JoinService {
     );
   };
 
+  /**
+   * The room was loaded again after being written elsewhere (or by a write of ours that seemed to
+   * fail): answer whoever that settled, and bring the host's list, the expiry timer and the
+   * presence marks up to date.
+   */
+  reloaded(room: Readonly<RoomRecord>, before: Readonly<RoomRecord>): void {
+    const { code } = room;
+    for (const { requestId, userId, kind } of before.requests) {
+      if (kind !== 'join' || room.requests.some((r) => r.requestId === requestId)) continue;
+      const retryAfter = room.denied?.[userId];
+      this.decide(
+        code,
+        userId,
+        room.admitted.includes(userId)
+          ? { approved: true }
+          : { approved: false, ...(retryAfter === undefined ? {} : { retryAfter }) },
+      );
+    }
+    this.sendInbox(code, room);
+    this.arm(code, nextExpiry(room));
+    void this.publishPresence(code);
+  }
+
   close(): void {
     this.closed = true;
     for (const h of this.expiryTimers.values()) this.timers.clearTimeout(h);

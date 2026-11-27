@@ -19,7 +19,7 @@ import { attachRealtime, type Timers } from './realtime';
 import { registerRoomRoutes } from './rooms/routes';
 import type { RoomRedis } from './rooms/redis';
 import type { RandomInt } from './rooms/code';
-import { RoomStore } from './rooms/roomStore';
+import { RoomStore, type RoomRecord } from './rooms/roomStore';
 import { RoomRegistry } from './rooms/roomRegistry';
 import { JoinService } from './rooms/joinService';
 import { SeatService } from './rooms/seatService';
@@ -200,33 +200,43 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
     topUps?: TopUpService;
     hosts?: HostService;
     presence?: PresenceService;
+    joins?: JoinService;
   } = {};
   const roomStore =
     typeof r.get === 'function' && typeof r.set === 'function'
-      ? new RoomStore(r as RoomRedis)
+      ? new RoomStore(r as RoomRedis, { log: app.log })
       : null;
+  // After every committed change, including one learnt of by loading the room again.
+  const committed = (room: Readonly<RoomRecord>, before: Readonly<RoomRecord>): void => {
+    // First: it takes removed players out of the room before anything more is sent.
+    late.hosts?.committed(room, before);
+    broadcaster.publish(room);
+    late.games?.committed(room, before);
+    late.topUps?.committed(room, before);
+    late.presence?.committed(room);
+  };
+  const commitError = (err: unknown, room: Readonly<RoomRecord>): void =>
+    app.log.error(
+      { code: room.code, err: err instanceof Error ? err.name : 'unknown' },
+      'room commit hook failed',
+    );
   const roomRegistry: RoomRegistry | null = roomStore
     ? new RoomRegistry(roomStore, {
         // Rooms with admitted sockets in them are never evicted.
         isRoomActive: (code) => app.realtime.io.sockets.adapter.rooms.has(roomChannel(code)),
-        actor: {
-          onCommit: (room, before) => {
-            // First: it takes removed players out of the room before anything more is sent.
-            late.hosts?.committed(room, before);
-            broadcaster.publish(room);
-            late.games?.committed(room, before);
-            late.topUps?.committed(room, before);
-            late.presence?.committed(room);
-          },
-          onCommitError: (err, room) =>
-            app.log.error(
-              { code: room.code, err: err instanceof Error ? err.name : 'unknown' },
-              'room commit hook failed',
-            ),
-        },
+        actor: { onCommit: committed, onCommitError: commitError },
         onLoad: (room) => {
           late.games?.loaded(room);
           late.presence?.loaded(room);
+        },
+        onReload: (room, before) => {
+          app.log.warn({ code: room.code }, 'room was written elsewhere; loaded again');
+          try {
+            committed(room, before);
+            late.joins?.reloaded(room, before);
+          } catch (err) {
+            commitError(err, room);
+          }
         },
       })
     : null;
@@ -257,6 +267,7 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
         ? {}
         : { presenceDebounceMs: deps.presenceDebounceMs }),
     });
+    late.joins = joins;
     app.realtime.register(joins.register);
     app.addHook('onClose', async () => joins.close());
     const seats = new SeatService({

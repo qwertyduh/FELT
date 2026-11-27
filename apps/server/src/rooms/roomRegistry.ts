@@ -30,6 +30,12 @@ export interface RoomRegistryOptions {
   actor?: RoomActorOptions;
   /** Called once for each actor built from the stored record (e.g. to re-arm its timers). */
   onLoad?: (room: Readonly<RoomRecord>) => void;
+  /**
+   * A room was loaded again because it had been written elsewhere. `before` is the last state
+   * this process committed or loaded, i.e. what its sockets were told. Called before the new
+   * actor can run anything.
+   */
+  onReload?: (room: Readonly<RoomRecord>, before: Readonly<RoomRecord>) => void;
   drainTimeoutMs?: number;
 }
 
@@ -45,6 +51,8 @@ export class RoomRegistry {
   private readonly isRoomActive: (code: RoomCode) => boolean;
   private timer: unknown;
   private closed = false;
+  /** Rooms to load again after a conflict: the state their actor held. */
+  private readonly outdated = new Map<RoomCode, Readonly<RoomRecord>>();
 
   constructor(
     private readonly store: Pick<RoomStore, 'get' | 'save'>,
@@ -64,7 +72,7 @@ export class RoomRegistry {
     return this.actors.size;
   }
 
-  /** Unknown (or corrupt) room -> null. Redis failures reject. */
+  /** Unknown room -> null. Redis failures and unreadable records reject. */
   get(code: RoomCode): Promise<RoomActor | null> {
     const live = this.actors.get(code);
     if (live) return Promise.resolve(live);
@@ -72,16 +80,32 @@ export class RoomRegistry {
     if (inflight) return inflight;
     const p = (async () => {
       const record = await this.store.get(code);
-      if (!record || this.closed) return null;
+      if (!record || this.closed) {
+        this.outdated.delete(code);
+        return null;
+      }
       const actor = new RoomActor(record, this.store, {
         now: () => this.clock.now(),
         onGone: (a) => {
           if (this.actors.get(code) === a) this.actors.delete(code);
         },
+        onConflict: (a) => {
+          if (this.actors.get(code) !== a) return;
+          this.actors.delete(code);
+          this.outdated.set(code, a.state());
+          // At once: the sockets are owed the current state and the timers its deadlines. If this
+          // fails, whoever asks for the room next does it.
+          void this.get(code).catch(() => undefined);
+        },
         ...this.opts.actor,
       });
       this.actors.set(code, actor);
       this.opts.onLoad?.(record);
+      const before = this.outdated.get(code);
+      if (before) {
+        this.outdated.delete(code);
+        this.opts.onReload?.(record, before);
+      }
       return actor;
     })().finally(() => this.loading.delete(code));
     this.loading.set(code, p);
@@ -116,5 +140,6 @@ export class RoomRegistry {
     clearTimeout(timer);
     for (const a of actors) a.dispose();
     this.actors.clear();
+    this.outdated.clear();
   }
 }
