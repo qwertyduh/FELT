@@ -42,7 +42,11 @@ export const initialRoomState: RoomStoreState = {
 
 export const useRoomStore = create<RoomStoreState>(() => initialRoomState);
 
-/** Applies only strictly newer versions of the same room. Returns whether it was applied. */
+/**
+ * Applies only newer versions of the same room; right after a reconnect the version already held
+ * is accepted too (nothing changed while away: one version always has one content). Returns
+ * whether it was applied.
+ */
 export function applyRoomState(next: unknown): boolean {
   const parsed = PublicRoomStateSchema.safeParse(next);
   if (!parsed.success) {
@@ -52,7 +56,8 @@ export function applyRoomState(next: unknown): boolean {
   const incoming = parsed.data;
   const s = useRoomStore.getState();
   const sameRoom = s.room?.code === incoming.code;
-  if (sameRoom && incoming.version <= s.lastVersion) return false;
+  const floor = s.needsResync ? s.lastVersion : s.lastVersion + 1;
+  if (sameRoom && incoming.version < floor) return false;
   useRoomStore.setState({
     ...(sameRoom ? {} : { ...initialRoomState, invalidDropped: s.invalidDropped }),
     room: incoming,

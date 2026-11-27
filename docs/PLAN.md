@@ -273,10 +273,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests show the version increments, and a privacy test confirms no hole cards or deck in the output (even when present in the hand state).
 - _Note: GO round 1. rooms/publicState.ts (allow-list builder) and rooms/broadcaster.ts (only sender of room:state), RoomActor onCommit hook. Table chip amounts are bounded only by safe integers; MAX_CHIPS still caps inputs. Follow-ups fixed in P33: presence publishing on every reconnect, same version with different content, presence writes refreshing the TTL, swallowed onCommit errors. Open: preClose writes per departing user; no duplicate-board check in the public schema. P33 mid-hand leave/reseat must not desync engine seats. P36 must call resetRoom() when leaving a room._
 
-### ⬜ P33 · Hand lifecycle in actor (hybrid)
+### ✅ P33 · Hand lifecycle in actor (hybrid)
 - **Needs:** P32, P21, P24
 - **Do:** `host:start` → `startHand(deck=null)`, `game:act` → engine, `host:advance_street`, `host:award` with the 5s confirm window + `host:dispute`, then the next hand after a short delay. Stacks update from the engine.
 - **Done when:** an integration test with 3 socket clients plays a hybrid hand through to award.
+- _Note: GO round 2 (round 1: a leaver unmatched bet could be won by a short all-in; fixed, uncalled chips are returned). rooms/{game,gameService,gameSchema}.ts, engine foldOut(); the hand lives in the room record. host:advance_street requires `street` (P41 sends it). Ledger has `hand_result` lines and may have several `cash_out` lines per player (P52). Defaults for the owner to confirm: leaving mid-hand folds you at once (all-in cards stay live); sit_out/new sits apply next hand; host:award covers all pots, dispute stops auto-confirm; 5s next-hand delay; under 2 eligible players the host must start again. P32 follow-ups fixed. Open (non-blocking): a raise voided by the raiser leaving still reopens betting (restore hasActed; fix in P42); side pots can display too large until the river after double walk-outs; no test for the preflop big-blind floor in foldOut; game:act has no turn nonce; timers re-arm only when the room is next loaded (P36 clients must re-enter)._
 
 ### ✅ P34 · Web: socket client & room store
 - **Needs:** P26, P11

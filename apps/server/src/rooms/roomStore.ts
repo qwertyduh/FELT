@@ -7,6 +7,7 @@ import {
   type RoomSettings,
 } from '@felt/protocol';
 import { generateRoomCode, type RandomInt } from './code';
+import { GameSchema } from './gameSchema';
 import { bounded, RoomStoreUnavailableError, type RoomRedis } from './redis';
 
 export const ROOM_TTL_SECONDS = 2 * 60 * 60;
@@ -53,6 +54,8 @@ export const RoomRecordSchema = z
           username: z.string().min(1).max(20),
           stack: z.number().int().min(0),
           sittingOut: z.boolean(),
+          /** Left during a hand their cards are still live in; cashed out when it ends. */
+          leaving: z.boolean().optional(),
         })
         .strict(),
     ),
@@ -68,6 +71,8 @@ export const RoomRecordSchema = z
         })
         .strict(),
     ),
+    /** Absent until the host first starts the game. */
+    game: GameSchema.optional(),
   })
   .strict();
 export type RoomRecord = z.infer<typeof RoomRecordSchema>;
@@ -168,10 +173,15 @@ export class RoomStore {
   /**
    * Persist `record` (caller has already bumped `version`) with a refreshed TTL. XX: a room whose
    * key expired or was deleted is never resurrected; that throws RoomGoneError.
+   * `keepTtl`: a write that is not activity (presence) must not extend the room's life.
    */
-  async save(record: RoomRecord): Promise<void> {
+  async save(record: RoomRecord, opts: { keepTtl?: boolean } = {}): Promise<void> {
+    const key = roomKey(record.code);
+    const value = JSON.stringify(record);
     const ok = await bounded(() =>
-      this.redis.set(roomKey(record.code), JSON.stringify(record), 'EX', ROOM_TTL_SECONDS, 'XX'),
+      opts.keepTtl
+        ? this.redis.set(key, value, 'KEEPTTL', 'XX')
+        : this.redis.set(key, value, 'EX', ROOM_TTL_SECONDS, 'XX'),
     );
     if (ok !== 'OK') throw new RoomGoneError();
   }

@@ -48,9 +48,16 @@ export interface RoomActorOptions {
   onGone?: (actor: RoomActor) => void;
   /**
    * Called synchronously right after each committed (persisted) change, before the next task can
-   * start, so calls arrive in version order. Errors are swallowed: the change is already saved.
+   * start, so calls arrive in version order. `before` is the state the change replaced. An error
+   * never fails the task (the change is already saved); it goes to `onCommitError`.
    */
-  onCommit?: (room: Readonly<RoomRecord>) => void;
+  onCommit?: (room: Readonly<RoomRecord>, before: Readonly<RoomRecord>) => void;
+  onCommitError?: (err: unknown, room: Readonly<RoomRecord>) => void;
+}
+
+export interface EnqueueOptions {
+  /** Persist without refreshing the room's TTL (the change is not user activity). */
+  keepTtl?: boolean;
 }
 
 /**
@@ -68,6 +75,7 @@ export class RoomActor {
   private readonly timeoutMs: number;
   private readonly onGone: ((a: RoomActor) => void) | undefined;
   private readonly onCommit: RoomActorOptions['onCommit'];
+  private readonly onCommitError: RoomActorOptions['onCommitError'];
   private last: number;
 
   constructor(
@@ -81,6 +89,7 @@ export class RoomActor {
     this.timeoutMs = opts.taskTimeoutMs ?? TASK_TIMEOUT_MS;
     this.onGone = opts.onGone;
     this.onCommit = opts.onCommit;
+    this.onCommitError = opts.onCommitError;
     this.last = this.now();
   }
 
@@ -104,7 +113,7 @@ export class RoomActor {
     return this.disposed;
   }
 
-  enqueue<T = void>(fn: RoomTask<T>): Promise<T> {
+  enqueue<T = void>(fn: RoomTask<T>, opts: EnqueueOptions = {}): Promise<T> {
     const ctx = running.getStore();
     if (ctx?.actor === this && ctx.active)
       return Promise.reject(new RoomActorError('reentrant_enqueue'));
@@ -149,7 +158,7 @@ export class RoomActor {
           throw new RoomActorError('invalid_record');
         }
         try {
-          await this.store.save(committed); // throws -> `this.room` stays at `before`
+          await this.store.save(committed, opts); // throws -> `this.room` stays at `before`
         } catch (err) {
           if (err instanceof RoomGoneError) {
             this.dispose();
@@ -159,9 +168,10 @@ export class RoomActor {
         }
         this.room = committed;
         try {
-          this.onCommit?.(committed);
-        } catch {
+          this.onCommit?.(committed, before);
+        } catch (err) {
           // Publishing must never fail an already persisted change.
+          this.onCommitError?.(err, committed);
         }
         return result;
       } finally {

@@ -1,6 +1,6 @@
 import type { RoomCode } from '@felt/protocol';
 import { RoomActor, type RoomActorOptions } from './roomActor';
-import type { RoomStore } from './roomStore';
+import type { RoomRecord, RoomStore } from './roomStore';
 
 export const IDLE_EVICT_MS = 10 * 60_000;
 export const SWEEP_INTERVAL_MS = 60_000;
@@ -28,6 +28,8 @@ export interface RoomRegistryOptions {
   /** True while a room has connected sockets; such rooms are never evicted. */
   isRoomActive?: (code: RoomCode) => boolean;
   actor?: RoomActorOptions;
+  /** Called once for each actor built from the stored record (e.g. to re-arm its timers). */
+  onLoad?: (room: Readonly<RoomRecord>) => void;
   drainTimeoutMs?: number;
 }
 
@@ -79,6 +81,7 @@ export class RoomRegistry {
         ...this.opts.actor,
       });
       this.actors.set(code, actor);
+      this.opts.onLoad?.(record);
       return actor;
     })().finally(() => this.loading.delete(code));
     this.loading.set(code, p);

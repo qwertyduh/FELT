@@ -63,3 +63,8 @@ export const EpochMsSchema = z.number().int().min(0);
 export const ChipsByUserSchema = z
   .record(UserIdSchema, ChipsSchema)
   .refine((r) => Object.keys(r).length <= MAX_SEATS, { message: 'too many entries' });
+
+/** Like `ChipsByUserSchema`, for chips won or held at the table (not capped at MAX_CHIPS). */
+export const TableChipsByUserSchema = z
+  .record(UserIdSchema, TableChipsSchema)
+  .refine((r) => Object.keys(r).length <= MAX_SEATS, { message: 'too many entries' });

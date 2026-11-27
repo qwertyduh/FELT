@@ -23,6 +23,7 @@ import { RoomStore } from './rooms/roomStore';
 import { RoomRegistry } from './rooms/roomRegistry';
 import { JoinService } from './rooms/joinService';
 import { SeatService } from './rooms/seatService';
+import { GameService } from './rooms/gameService';
 import { StateBroadcaster } from './rooms/broadcaster';
 import { roomChannel } from './realtime/channels';
 
@@ -52,6 +53,8 @@ export interface AppDeps {
   realtimeTimers?: Timers;
   /** Clock/timer for room deadlines (join-request expiry, cooldowns); tests inject fakes. */
   roomTimers?: Timers;
+  /** How long a departure waits before it is published (default 2s). */
+  presenceDebounceMs?: number;
 }
 
 /**
@@ -186,12 +189,24 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
   const broadcaster = new StateBroadcaster(app.realtime.io, { log: app.log });
   // Room actors; null when Redis lacks the room commands (same optional pattern as the routes).
   const r = deps.redis as Partial<RoomRedis>;
-  const roomRegistry =
+  const late: { games?: GameService } = {};
+  const roomRegistry: RoomRegistry | null =
     typeof r.get === 'function' && typeof r.set === 'function'
       ? new RoomRegistry(new RoomStore(r as RoomRedis), {
           // Rooms with admitted sockets in them are never evicted.
           isRoomActive: (code) => app.realtime.io.sockets.adapter.rooms.has(roomChannel(code)),
-          actor: { onCommit: (room) => broadcaster.publish(room) },
+          actor: {
+            onCommit: (room, before) => {
+              broadcaster.publish(room);
+              late.games?.committed(room, before);
+            },
+            onCommitError: (err, room) =>
+              app.log.error(
+                { code: room.code, err: err instanceof Error ? err.name : 'unknown' },
+                'room commit hook failed',
+              ),
+          },
+          onLoad: (room) => late.games?.loaded(room),
         })
       : null;
   app.decorate('roomRegistry', roomRegistry);
@@ -208,6 +223,9 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
       broadcaster,
       db,
       ...(deps.roomTimers ? { timers: deps.roomTimers } : {}),
+      ...(deps.presenceDebounceMs === undefined
+        ? {}
+        : { presenceDebounceMs: deps.presenceDebounceMs }),
     });
     app.realtime.register(joins.register);
     app.addHook('onClose', async () => joins.close());
@@ -217,6 +235,14 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
       ...(deps.roomTimers ? { timers: deps.roomTimers } : {}),
     });
     app.realtime.register(seats.register);
+    const games = new GameService({
+      io: app.realtime.io,
+      registry: roomRegistry,
+      ...(deps.roomTimers ? { timers: deps.roomTimers } : {}),
+    });
+    late.games = games;
+    app.realtime.register(games.register);
+    app.addHook('onClose', async () => games.close());
   }
   registerMe(app, db);
   await registerUsernameRoutes(app, db);

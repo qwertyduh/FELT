@@ -27,6 +27,12 @@ import type { HandPlayer, HandState, Pot, Transition, EngineEvent } from './type
  * - Degenerate: if no live player has committed anything but folded players have, all of that
  *   dead money forms one pot with every live player eligible.
  *
+ * FINAL SETTLEMENT (`deadFloor` given: no betting can follow). Folded chips above the highest live
+ * commitment were never covered by anyone still in the hand, so they go back to their owners
+ * instead of joining the top layer. `deadFloor(id)` is the part of a folded player's chips that
+ * stays in the pot regardless (a posted blind). Only reachable when players leave out of turn
+ * (`foldOut`) or fold without facing a bet.
+ *
  * Throws RangeError on malformed input (non-integer / negative chips, duplicate ids, nobody
  * live). This is a programming error, not a game outcome.
  */
@@ -49,6 +55,7 @@ export interface PotsResult {
 export function computePots(
   contributions: readonly Contribution[],
   folded: ReadonlySet<string> | readonly string[],
+  deadFloor?: (playerId: string) => number,
 ): PotsResult {
   const foldedSet: ReadonlySet<string> = Array.isArray(folded)
     ? new Set(folded as readonly string[])
@@ -74,6 +81,18 @@ export function computePots(
     const amount = top.committed - second;
     returned.push({ playerId: top.playerId, amount });
     adjusted.set(top.playerId, second);
+  }
+
+  if (deadFloor) {
+    const topLive = Math.max(...live.map((c) => adjusted.get(c.playerId) as number));
+    for (const c of contributions) {
+      if (!foldedSet.has(c.playerId)) continue;
+      const v = adjusted.get(c.playerId) as number;
+      const keep = Math.max(topLive, deadFloor(c.playerId));
+      if (v <= keep) continue;
+      returned.push({ playerId: c.playerId, amount: v - keep });
+      adjusted.set(c.playerId, keep);
+    }
   }
 
   const levels = [
@@ -103,6 +122,26 @@ export function computePots(
   return { pots, returned };
 }
 
+/** The blind `player` posted this hand (0 for everyone else). */
+export function postedBlind(state: HandState, player: HandPlayer): number {
+  if (player.seat === state.bigBlindSeat) return state.bigBlind;
+  return player.seat === state.smallBlindSeat ? state.smallBlind : 0;
+}
+
+/**
+ * `computePots`' dead-money floor for a final settlement. A posted blind is dead money for a last
+ * player standing, even one who never put a chip in. Not if that player is all-in, or if several
+ * are still in: then nobody takes more of a blind than they covered.
+ */
+export function deadBlindFloor(state: HandState): (playerId: string) => number {
+  const live = state.players.filter((p) => p.status !== 'folded');
+  const open = live.length === 1 && live[0]!.status === 'active';
+  return (id) => {
+    const p = state.players.find((x) => x.playerId === id);
+    return open && p ? postedBlind(state, p) : 0;
+  };
+}
+
 const potsEqual = (a: readonly Pot[], b: readonly Pot[]): boolean =>
   a.length === b.length &&
   a.every((p, i) => {
@@ -129,6 +168,7 @@ export function settleBets(state: HandState): Transition {
   const { pots, returned } = computePots(
     state.players.map((p) => ({ playerId: p.playerId, committed: p.committed })),
     state.players.filter((p) => p.status === 'folded').map((p) => p.playerId),
+    state.street === 'river' ? deadBlindFloor(state) : undefined, // nothing can be bet after it
   );
   const back = new Map(returned.map((r) => [r.playerId, r.amount]));
   const players: HandPlayer[] = state.players.map((p) => {

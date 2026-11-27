@@ -1,13 +1,13 @@
 import { z } from 'zod';
 import {
   CardSchema,
-  ChipsByUserSchema,
   ChipsSchema,
   EpochMsSchema,
   IdSchema,
   MAX_SEATS,
   PositiveChipsSchema,
   SeatIndexSchema,
+  TableChipsByUserSchema,
   UserIdSchema,
 } from './common';
 import { HostSettingsPatchSchema, RoomCodeSchema } from './rooms';
@@ -119,8 +119,16 @@ export const clientEventSchemas = {
   'host:kick': userRef,
   'host:transfer': userRef,
   'host:mute': z.object({ userId: UserIdSchema, muted: z.boolean() }).strict(),
+  /**
+   * `street` is the street the host is advancing FROM. Without it a double tap during an all-in
+   * run-out (nobody left to bet) would advance two streets.
+   */
   'host:advance_street': z
-    .object({ handId, cards: z.array(CardSchema).min(1).max(3).optional() })
+    .object({
+      handId,
+      street: z.enum(['preflop', 'flop', 'turn', 'river']),
+      cards: z.array(CardSchema).min(1).max(3).optional(),
+    })
     .strict(),
   'host:award': z
     .object({
@@ -185,7 +193,7 @@ export const HandResultPayloadSchema = z
           .object({
             potId: IdSchema,
             winners: z.array(UserIdSchema).max(MAX_SEATS),
-            amounts: ChipsByUserSchema,
+            amounts: TableChipsByUserSchema,
             contested: z.boolean(),
             handNames: z.record(UserIdSchema, z.string().max(60)),
           })
@@ -205,7 +213,7 @@ export const HandResultPayloadSchema = z
           .strict(),
       )
       .max(MAX_SEATS),
-    stacks: ChipsByUserSchema,
+    stacks: TableChipsByUserSchema,
   })
   .strict();
 

@@ -3,6 +3,8 @@ export interface RoomRedis {
   set(key: string, value: string, ex: 'EX', seconds: number, nx: 'NX'): Promise<'OK' | null>;
   /** Overwrite an existing key only (never resurrects an expired room); null when it is gone. */
   set(key: string, value: string, ex: 'EX', seconds: number, xx: 'XX'): Promise<'OK' | null>;
+  /** Same, leaving the key's remaining TTL alone. */
+  set(key: string, value: string, ttl: 'KEEPTTL', xx: 'XX'): Promise<'OK' | null>;
   get(key: string): Promise<string | null>;
   del(...keys: string[]): Promise<number>;
   expire(key: string, seconds: number): Promise<number>;

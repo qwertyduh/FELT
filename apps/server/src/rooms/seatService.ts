@@ -17,7 +17,8 @@ import { KeyedLimiter } from '../realtime/rateLimit';
 import { KeyedSerial } from './keyedSerial';
 import { RoomGoneError, type RoomRecord } from './roomStore';
 import type { RoomRegistry } from './roomRegistry';
-import { leaveSeat, setSittingOut, sit, type SeatResult } from './seating';
+import { leave } from './game';
+import { setSittingOut, sit, type SeatResult } from './seating';
 
 /**
  * `room:sit` per user: each attempt costs a username lookup, and sit/leave cycling grows the
@@ -71,7 +72,7 @@ export class SeatService {
     onClientEvent(
       socket,
       'room:leave',
-      () => this.intent(socket, (room, userId) => leaveSeat(room, userId, this.now())),
+      () => this.intent(socket, (room, userId) => leave(room, userId, this.now())),
       log,
     );
   };

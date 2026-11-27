@@ -7,7 +7,7 @@
  * only sit back with exactly the stack they left with (not at all if busted). Leaving in the lobby
  * is a refund (nothing was played), so the next buy-in is a fresh one.
  *
- * Not handled here: leaving while dealt into a running hand (P33) and top-ups (P43).
+ * Not handled here: leaving while dealt into a running hand (game.ts) and top-ups (P43).
  */
 import type { ErrorCode } from '@felt/protocol';
 import type { RoomRecord } from './roomStore';
@@ -42,10 +42,18 @@ function gate(room: Readonly<RoomRecord>, userId: string): SeatResult | null {
   return null;
 }
 
-/** Chips the user took away mid-game and may bring back, or null for a fresh buy-in. */
+/**
+ * Chips the user took away mid-game and may bring back, or null for a fresh buy-in. That is every
+ * `cash_out` since their last buy-in: chips can follow a leaver after they have gone (game.ts).
+ */
 function takenAway(room: Readonly<RoomRecord>, userId: string): number | null {
-  const last = room.ledger.filter((e) => e.userId === userId && e.kind === 'cash_out').at(-1);
-  return last && last.note !== NOTE_REFUND ? last.amount : null;
+  const mine = room.ledger.filter(
+    (e) => e.userId === userId && (e.kind === 'buy_in' || e.kind === 'cash_out'),
+  );
+  const out = mine.slice(mine.map((e) => e.kind).lastIndexOf('buy_in') + 1);
+  const last = out.at(-1);
+  if (!last || last.note === NOTE_REFUND) return null;
+  return out.reduce((sum, e) => sum + e.amount, 0);
 }
 
 export function sit(
@@ -102,6 +110,8 @@ export function setSittingOut(
   const mine = room.seats.find((s) => s.userId === userId);
   if (!mine) return refuse(room, 'not_seated', 'you are not seated');
   if (mine.sittingOut === sittingOut) return done(room);
+  // A leaving seat is already sitting out; it cannot be brought back.
+  if (mine.leaving) return refuse(room, 'forbidden', 'you are leaving the table');
   return done({ ...room, seats: room.seats.map((s) => (s === mine ? { ...s, sittingOut } : s)) });
 }
 

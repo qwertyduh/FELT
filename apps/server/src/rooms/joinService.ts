@@ -41,15 +41,21 @@ export const JOIN_PER_SEC = 10 / 60;
 export const ENTER_MISS_BURST = 20;
 export const ENTER_MISS_PER_SEC = 20 / 60;
 export const EXPIRY_RETRY_MS = 5_000;
+/**
+ * How long a departure waits before it is published. A socket that comes back within it changes
+ * nothing, and all departures of one room share the wait.
+ */
+export const PRESENCE_DEBOUNCE_MS = 2_000;
 
 export interface JoinServiceDeps {
   io: Realtime['io'];
   registry: RoomRegistry;
-  broadcaster: Pick<StateBroadcaster, 'sendTo'>;
+  broadcaster: Pick<StateBroadcaster, 'sendTo' | 'isStale' | 'forget'>;
   /** null: no service key, so new requests cannot be labelled with a username. */
   db: Db | null;
   timers?: Timers;
   newId?: () => string;
+  presenceDebounceMs?: number;
 }
 
 const realTimers: Timers = {
@@ -73,6 +79,8 @@ export class JoinService {
   private readonly timers: Timers;
   private readonly newId: () => string;
   private readonly expiryTimers = new Map<RoomCode, unknown>();
+  private readonly presenceTimers = new Map<RoomCode, NodeJS.Timeout>();
+  private readonly presenceDebounceMs: number;
   /** Rooms each user is waiting on (`room:cancel_request` has no payload). */
   private readonly waiting = new Map<string, Set<RoomCode>>();
   /** Keeps one user's request/cancel intents in arrival order. */
@@ -88,6 +96,7 @@ export class JoinService {
     this.db = deps.db;
     this.timers = deps.timers ?? realTimers;
     this.newId = deps.newId ?? randomUUID;
+    this.presenceDebounceMs = deps.presenceDebounceMs ?? PRESENCE_DEBOUNCE_MS;
     const now = () => this.timers.now();
     this.joinLimit = new KeyedLimiter(JOIN_PER_SEC, JOIN_BURST, now);
     this.enterLimit = new KeyedLimiter(ENTER_MISS_PER_SEC, ENTER_MISS_BURST, now);
@@ -97,7 +106,7 @@ export class JoinService {
     // Socket.io has already removed the socket from its channels when this fires.
     socket.on('disconnect', () => {
       const code = socket.data.roomCode;
-      if (code) void this.departed(code, socket.data.user.userId);
+      if (code) this.departed(code);
     });
     onClientEvent(
       socket,
@@ -129,6 +138,8 @@ export class JoinService {
     this.closed = true;
     for (const h of this.expiryTimers.values()) this.timers.clearTimeout(h);
     this.expiryTimers.clear();
+    for (const h of this.presenceTimers.values()) clearTimeout(h);
+    this.presenceTimers.clear();
   }
 
   private async guard(fn: () => Promise<Ack>): Promise<Ack> {
@@ -292,22 +303,20 @@ export class JoinService {
     if (socket.data.enterSeq !== seq) return errorAck('forbidden', 'superseded by a newer request');
     if (!socket.connected) return OK;
 
-    const fresh = !socket.rooms.has(roomChannel(code));
     const previous = socket.data.roomCode;
     if (previous && previous !== code) {
       void socket.leave(roomChannel(previous));
       void socket.leave(memberChannel(previous, userId));
-      void this.departed(previous, userId);
+      this.departed(previous);
     }
     void socket.leave(joinWaitChannel(code, userId));
     void socket.join([roomChannel(code), memberChannel(code, userId)]);
     socket.data.roomCode = code;
     if (room.hostId === userId) socket.emit('host:inbox', hostInbox(room, this.timers.now()));
-    // A newly entered socket changes who is connected: publish a new version to the whole room,
-    // this socket included (so it is newer than anything it held before a reconnect).
-    if (fresh && (await this.publishPresence(code))) return OK;
-    // Repeat `room:enter` (or publishing failed): only this socket needs the current state.
-    if (socket.connected && socket.data.roomCode === code) {
+    // If this changes who is connected, publish a new version (which reaches this socket too).
+    // Otherwise resend the current one unchanged.
+    const published = await this.publishPresence(code);
+    if (!published && socket.data.roomCode === code && socket.connected) {
       this.broadcaster.sendTo(socket, actor.state());
     }
     return OK;
@@ -315,23 +324,38 @@ export class JoinService {
 
   /**
    * Presence is not stored in the room, so a change of it is published by committing an unchanged
-   * copy: the version moves on and the actor's `onCommit` broadcasts. False if that failed.
+   * copy: the version moves on and the actor's `onCommit` broadcasts. Checked inside the queue, so
+   * changes that are already covered cost nothing. Never extends the room's TTL. True if a new
+   * version went out.
    */
   private async publishPresence(code: RoomCode): Promise<boolean> {
     try {
       const actor = await this.registry.get(code);
       if (!actor) return false;
-      await actor.enqueue((room) => ({ ...room }));
-      return true;
+      return await actor.enqueue(
+        (room) => {
+          const stale = this.broadcaster.isStale(room);
+          return { room: stale ? { ...room } : room, result: stale };
+        },
+        { keepTtl: true },
+      );
     } catch {
-      return false; // e.g. Redis down or shutting down; the next commit carries presence
+      this.departed(code); // e.g. Redis down: check again after the usual pause
+      return false;
     }
   }
 
-  /** One of the user's sockets left the room; publish if that was their last one there. */
-  private async departed(code: RoomCode, userId: string): Promise<void> {
-    if (this.closed || this.io.sockets.adapter.rooms.has(memberChannel(code, userId))) return;
-    await this.publishPresence(code);
+  /** Check presence again after a pause (a socket left, or publishing failed); once per room. */
+  private departed(code: RoomCode): void {
+    if (this.closed || this.presenceTimers.has(code)) return;
+    const timer = setTimeout(() => {
+      this.presenceTimers.delete(code);
+      // Nobody to tell: write nothing; the next to enter gets a fresh version.
+      if (!this.io.sockets.adapter.rooms.has(roomChannel(code))) this.broadcaster.forget(code);
+      else void this.publishPresence(code);
+    }, this.presenceDebounceMs);
+    timer.unref();
+    this.presenceTimers.set(code, timer);
   }
 
   /** A socket waits for one room at a time: decisions carry no room code. */

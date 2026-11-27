@@ -1,5 +1,4 @@
 import type {
-  Pot,
   EngineError,
   EngineEvent,
   HandPlayer,
@@ -10,7 +9,7 @@ import type {
   Transition,
 } from './types';
 import { advanceStreet } from './street';
-import { computePots } from './pots';
+import { computePots, deadBlindFloor, postedBlind, type ReturnedBet } from './pots';
 
 function fail<T>(code: EngineError['code'], message: string): Result<T> {
   return { ok: false, error: { code, message } };
@@ -93,44 +92,77 @@ function canRaise(state: HandState, p: HandPlayer): boolean {
 
 /**
  * Settle a hand where everyone else folded (P22). The winner's uncalled excess (over the
- * second-highest commitment) goes back as a bet_returned; the award is only the contested pot.
- * Chips move out of `committed` into stacks, so committed is zeroed once the hand has ended.
+ * second-highest commitment) goes back as a bet_returned, as do folded chips the winner never
+ * covered (see computePots); the award is only what is left. Chips move out of `committed` into
+ * stacks, so committed is zeroed once the hand has ended.
  */
-function settleUncontested(
-  players: readonly HandPlayer[],
-  winner: HandPlayer,
-): { players: HandPlayer[]; result: HandResult; total: number; returned: number; pots: Pot[] } {
+function settleUncontested(state: HandState, winner: HandPlayer) {
+  const { players } = state;
   const { pots, returned } = computePots(
     players.map((p) => ({ playerId: p.playerId, committed: p.committed })),
     players.filter((p) => p.status === 'folded').map((p) => p.playerId),
+    deadBlindFloor(state),
   );
-  const back = returned.find((r) => r.playerId === winner.playerId)?.amount ?? 0;
-  const total = players.reduce((s, p) => s + p.committed, 0) - back;
+  const back = new Map(returned.map((r: ReturnedBet) => [r.playerId, r.amount]));
+  const total =
+    players.reduce((s, p) => s + p.committed, 0) - returned.reduce((s, r) => s + r.amount, 0);
   const out = players.map((p) => ({
     ...p,
     bet: 0,
     committed: 0,
-    stack: p.playerId === winner.playerId ? p.stack + total + back : p.stack,
+    stack: p.stack + (back.get(p.playerId) ?? 0) + (p.playerId === winner.playerId ? total : 0),
   }));
   const stacks: Record<string, number> = {};
   for (const p of out) stacks[p.playerId] = p.stack;
+  const result: HandResult = {
+    awards: [
+      {
+        potId: 'pot-0',
+        winners: [winner.playerId],
+        amounts: { [winner.playerId]: total },
+        contested: false,
+        handNames: {},
+      },
+    ],
+    stacks,
+    showdown: [],
+  };
+  return { players: out, total, returned, pots, result };
+}
+
+/** End the hand for the last player standing; `events` holds those that led here. */
+function endUncontested(
+  state: HandState,
+  winner: HandPlayer,
+  events: EngineEvent[],
+): Result<Transition> {
+  const settled = settleUncontested(state, winner);
+  for (const r of settled.returned) {
+    events.push({ type: 'bet_returned', playerId: r.playerId, amount: r.amount });
+  }
+  events.push(
+    {
+      type: 'pot_awarded',
+      potId: 'pot-0',
+      winners: [winner.playerId],
+      amounts: { [winner.playerId]: settled.total },
+      contested: false,
+      handNames: {},
+    },
+    { type: 'hand_ended', result: settled.result },
+  );
   return {
-    players: out,
-    total,
-    returned: back,
-    pots,
-    result: {
-      awards: [
-        {
-          potId: 'pot-0',
-          winners: [winner.playerId],
-          amounts: { [winner.playerId]: total },
-          contested: false,
-          handNames: {},
-        },
-      ],
-      stacks,
-      showdown: [],
+    ok: true,
+    value: {
+      state: {
+        ...state,
+        players: settled.players,
+        pots: settled.pots,
+        street: 'ended',
+        currentActor: null,
+        result: settled.result,
+      },
+      events,
     },
   };
 }
@@ -255,7 +287,7 @@ export function applyAction(state: HandState, action: PlayerAction): Result<Tran
     hasActed: true,
     facedBet: raisesBet ? newBet : state.currentBet, // bet level after this action
   };
-  let players = state.players.map((p, i) => {
+  const players = state.players.map((p, i) => {
     if (i === idx) return updated;
     // A full raise reopens the action: everyone else must respond again.
     return isFullRaise && isActive(p) ? { ...p, hasActed: false } : p;
@@ -273,37 +305,93 @@ export function applyAction(state: HandState, action: PlayerAction): Result<Tran
 
   const live = players.filter((p) => p.status !== 'folded');
   const sole = live.length === 1 ? live[0] : undefined;
-  if (sole !== undefined) {
-    const settled = settleUncontested(players, sole);
-    players = settled.players;
-    if (settled.returned > 0) {
-      events.push({ type: 'bet_returned', playerId: sole.playerId, amount: settled.returned });
-    }
-    events.push(
-      {
-        type: 'pot_awarded',
-        potId: 'pot-0',
-        winners: [sole.playerId],
-        amounts: { [sole.playerId]: settled.total },
-        contested: false,
-        handNames: {},
-      },
-      { type: 'hand_ended', result: settled.result },
-    );
-    next = {
-      ...next,
-      players,
-      pots: settled.pots,
-      street: 'ended',
-      currentActor: null,
-      result: settled.result,
-    };
-    return { ok: true, value: { state: next, events } };
-  }
+  if (sole !== undefined) return endUncontested({ ...next, players }, sole, events);
 
   next = { ...next, currentActor: nextToAct(next, me.seat) };
   // Online: the engine advances (and runs out) streets itself once betting is complete.
   // Hybrid: stays put with currentActor null until the host sends advance_street.
+  if (next.mode === 'online' && next.currentActor === null) {
+    const adv = advanceStreet(next);
+    if (!adv.ok) return adv;
+    return {
+      ok: true,
+      value: { state: adv.value.state, events: [...events, ...adv.value.events] },
+    };
+  }
+  return { ok: true, value: { state: next, events } };
+}
+
+/**
+ * A player gives up their hand without waiting for their turn (P33: they leave the table). Only a
+ * player who can still act (`active`) on a betting street may be folded; an all-in player's hand
+ * stays live to showdown.
+ *
+ * - Chips the others have put in against stay in the pot (posted blinds always do). The part of
+ *   the leaver's bet above what anyone else committed was never called: it goes straight back
+ *   (`bet_returned`), as in P22.
+ * - If that leaves no live player at the current bet, `currentBet` drops to the highest live
+ *   player's bet (never below the big blind preflop), so nobody is asked to call a bet that is
+ *   gone. The min-raise becomes the step up to that bet from the next live bet below it (at least
+ *   the big blind).
+ */
+export function foldOut(state: HandState, playerId: string): Result<Transition> {
+  if (typeof state !== 'object' || state === null || !Array.isArray(state.players)) {
+    return fail('invalid_state', 'state must be a hand state object');
+  }
+  if (state.street === 'ended' || state.result !== null) {
+    return fail('hand_ended', 'the hand has ended');
+  }
+  const me = state.players.find((p) => p.playerId === playerId);
+  if (me === undefined) return fail('unknown_player', `unknown player ${playerId}`);
+  if (!BETTING_STREETS.includes(state.street)) {
+    return fail('illegal_action', `no folding on street ${state.street}`);
+  }
+  if (!isActive(me)) return fail('illegal_action', 'only a player who can still act may fold');
+
+  const covered = Math.max(
+    postedBlind(state, me),
+    ...state.players.filter((p) => p !== me).map((p) => p.committed),
+  );
+  const back = Math.max(0, me.committed - covered); // always part of this street's bet
+  const gone: HandPlayer = {
+    ...me,
+    status: 'folded',
+    hasActed: true,
+    facedBet: state.currentBet,
+    stack: me.stack + back,
+    bet: me.bet - back,
+    committed: me.committed - back,
+  };
+  let players = state.players.map((p) => (p === me ? gone : p));
+  const events: EngineEvent[] = [{ type: 'player_acted', playerId, action: 'fold', amount: 0 }];
+  if (back > 0) events.push({ type: 'bet_returned', playerId, amount: back });
+
+  const live = players.filter((p) => p.status !== 'folded');
+  const sole = live.length === 1 ? live[0] : undefined;
+  if (sole !== undefined) return endUncontested({ ...state, players }, sole, events);
+
+  const bets = live.map((p) => p.bet);
+  const floor = state.street === 'preflop' ? state.bigBlind : 0;
+  const currentBet = Math.min(state.currentBet, Math.max(floor, ...bets));
+  let { lastFullRaise } = state;
+  if (currentBet < state.currentBet) {
+    const below = Math.max(0, ...bets.filter((b) => b < currentBet));
+    lastFullRaise = Math.max(state.bigBlind, Math.min(lastFullRaise, currentBet - below));
+    players = players.map((p) => ({ ...p, facedBet: Math.min(p.facedBet, currentBet) }));
+  }
+
+  const folded: HandState = { ...state, players, currentBet, lastFullRaise };
+  // The player on turn may be the leaver, or may no longer owe anything.
+  const turn = players.find((p) => p.seat === state.currentActor);
+  const next: HandState = {
+    ...folded,
+    currentActor:
+      turn === undefined
+        ? null
+        : needsAction(folded, turn)
+          ? turn.seat
+          : nextToAct(folded, turn.seat),
+  };
   if (next.mode === 'online' && next.currentActor === null) {
     const adv = advanceStreet(next);
     if (!adv.ok) return adv;
