@@ -263,6 +263,13 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 
 `handId` on game actions prevents a stale tap from a previous hand being applied.
 
+### Versioning
+Web and server deploy separately and open tabs keep old bundles.
+- **Handshake:** `handshake.auth` is `{ token, protocol }`. Any `protocol` but the server's `PROTOCOL_VERSION` (or none) is refused as `upgrade_required` (`data.protocol` = the server's), before the token is looked at. The client shows a reload screen: no token refresh, no sign-out, no automatic reload, and it keeps reconnecting with backoff.
+- **Bumping:** `packages/protocol/src/version.ts` keeps one fingerprint of the wire schemas per version; a test fails until a changed wire format is appended.
+- **Client parsing:** server payloads are parsed with `parseTolerant` (unknown keys stripped). A `room:state` that still fails shows the reload screen. Server-side schemas stay strict.
+- **REST** carries no version: responses are parsed tolerantly and request bodies are validated strictly.
+
 ### Server → Client
 | Event | Payload | Audience |
 |---|---|---|

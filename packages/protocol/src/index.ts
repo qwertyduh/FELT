@@ -5,3 +5,5 @@ export * from './common';
 export * from './rooms';
 export * from './state';
 export * from './events';
+export * from './version';
+export * from './tolerant';

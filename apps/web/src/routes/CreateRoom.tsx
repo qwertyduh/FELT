@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { CreateRoomResponseSchema, MAX_SEATS, MIN_SEATS, TURN_TIMER_OPTIONS } from '@felt/protocol';
+import {
+  CreateRoomResponseSchema,
+  MAX_SEATS,
+  MIN_SEATS,
+  TURN_TIMER_OPTIONS,
+  parseTolerant,
+} from '@felt/protocol';
 import { apiFetch } from '../lib/api';
 import {
   createRoomErrorMessage,
@@ -166,7 +172,9 @@ export function CreateRoom() {
         },
         { retryUnavailable: false },
       );
-      const { code } = CreateRoomResponseSchema.parse(res);
+      const parsed = parseTolerant(CreateRoomResponseSchema, res);
+      if (!parsed.success) throw parsed.error;
+      const { code } = parsed.data;
       // If the host already walked away from this screen, don't yank them into the room.
       if (mounted.current) void navigate(`/r/${code}`);
     } catch (err) {

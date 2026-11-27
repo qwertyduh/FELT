@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { UsernameCheckResultSchema } from '@felt/protocol';
+import { UsernameCheckResultSchema, parseTolerant } from '@felt/protocol';
 import { apiFetch } from './api';
 import { rejected, verdictFromError, type Verdict } from './usernameCopy';
 
@@ -25,7 +25,7 @@ export function useUsernameCheck(name: string | null, debounceMs = CHECK_DEBOUNC
       })
         .then((body) => {
           if (controller.signal.aborted) return;
-          const parsed = UsernameCheckResultSchema.safeParse(body);
+          const parsed = parseTolerant(UsernameCheckResultSchema, body);
           const state: CheckState = !parsed.success
             ? verdictFromError(undefined)
             : parsed.data.available

@@ -45,3 +45,6 @@ Check after a deploy: `curl -i https://server-production-1b135132.up.railway.app
 - Supabase auth `site_url` is still `http://localhost:3000` (unused by anonymous sign-in); set it when email or Google auth is added.
 - `railway.json` is deprecated by Railway ("keeps working until 2026-12-01"); migrate with `railway config migrate` when convenient. `RAILWAY_DOCKERFILE_PATH` keeps the Dockerfile selection working regardless.
 - Rate limits are in-process; move them to Redis before running more than one server replica.
+
+## Protocol version rollout
+Web and server check a protocol version on connect; on a mismatch the app asks the user to reload. For the first release with this check, deploy web first, then the server. Tabs still running an older bundle have no reload screen and stay on "Reconnecting" until reloaded by hand.

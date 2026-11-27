@@ -3,7 +3,13 @@ import type { FastifyInstance } from 'fastify';
 import { Server } from 'socket.io';
 import { AuthError, AuthUnavailableError, type AuthUser } from '../auth/verify';
 import { installGuards, type FeltSocket, type SocketData, type SocketRegistrar } from './handlers';
-import type { ClientToServerEvents, ServerToClientEvents } from '@felt/protocol';
+import {
+  PROTOCOL_VERSION,
+  UPGRADE_REQUIRED,
+  type ClientToServerEvents,
+  type ServerToClientEvents,
+  type UpgradeRequiredData,
+} from '@felt/protocol';
 
 export type SocketAuthCode = 'unauthorized' | 'token_expired' | 'auth_unavailable';
 
@@ -47,6 +53,7 @@ export const MAX_HTTP_BUFFER_SIZE = 64 * 1024;
  * Attaches Socket.io at `/socket.io`.
  * - Token: `handshake.auth.token` ONLY. Never the query string (URLs get logged by proxies) and
  *   not headers (browsers can't set them on WebSocket anyway).
+ * - Protocol: `handshake.auth.protocol` must equal `PROTOCOL_VERSION` (`upgrade_required`).
  * - Origin: a browser always sends Origin, so a present Origin must be allow-listed (this also
  *   blocks cross-site WebSocket hijacking). A missing Origin (non-browser clients, tests) is
  *   allowed through to the JWT check, which is the actual gate.
@@ -81,8 +88,19 @@ export function attachRealtime(app: FastifyInstance, deps: RealtimeDeps): Realti
       next(err);
     };
     const auth: unknown = socket.handshake.auth;
-    const token =
-      typeof auth === 'object' && auth !== null ? (auth as { token?: unknown }).token : undefined;
+    const { token, protocol } = (typeof auth === 'object' && auth !== null ? auth : {}) as {
+      token?: unknown;
+      protocol?: unknown;
+    };
+    // Before the token: an outdated client must hear "reload", never an auth failure.
+    if (protocol !== PROTOCOL_VERSION) {
+      const data: UpgradeRequiredData = { code: UPGRADE_REQUIRED, protocol: PROTOCOL_VERSION };
+      app.log.info(
+        { clientProtocol: typeof protocol === 'number' ? protocol : null },
+        'socket protocol mismatch',
+      );
+      return next(Object.assign(new Error(UPGRADE_REQUIRED), { data }));
+    }
     if (typeof token !== 'string' || token === '') return fail('unauthorized');
     deps
       .verify(token)

@@ -5,6 +5,7 @@ import {
   JOIN_REQUEST_TTL_MS,
   RoomCodeSchema,
   RoomPreviewSchema,
+  parseTolerant,
   type RoomCode,
   type RoomPreview,
 } from '@felt/protocol';
@@ -19,6 +20,12 @@ import { getWebEnv } from '../lib/env';
 import { createJoinSession, type JoinSession, type JoinState } from '../lib/joinSession';
 import { useConnectionStore } from '../lib/realtime/connectionStore';
 import { useRoomStore } from '../lib/realtime/roomStore';
+import {
+  needsReload,
+  reloadForUpdate,
+  updateNotReady,
+  useUpgradeStore,
+} from '../lib/realtime/upgradeStore';
 import {
   authStoreToken,
   createSocketClient,
@@ -501,7 +508,11 @@ function Visit({ code, userId }: { code: RoomCode; userId: string }) {
       code,
       userId,
       client,
-      fetchPreview: async () => RoomPreviewSchema.parse(await apiFetch(`/rooms/${code}`)),
+      fetchPreview: async () => {
+        const parsed = parseTolerant(RoomPreviewSchema, await apiFetch(`/rooms/${code}`));
+        if (!parsed.success) throw parsed.error;
+        return parsed.data;
+      },
     });
     return { client, session };
   });
@@ -512,10 +523,45 @@ function Visit({ code, userId }: { code: RoomCode; userId: string }) {
     return () => session.stop();
   }, [session]);
 
+  // The visit keeps running underneath: if the server catches up, the table comes back by itself.
+  const outdated = useUpgradeStore(needsReload);
   return (
-    <Frame code={code} action={<Controls session={session} userId={userId} client={client} />}>
-      <Connected session={session} userId={userId} client={client} />
+    <Frame
+      code={code}
+      action={!outdated && <Controls session={session} userId={userId} client={client} />}
+    >
+      {outdated ? (
+        <UpgradeScreen />
+      ) : (
+        <Connected session={session} userId={userId} client={client} />
+      )}
     </Frame>
+  );
+}
+
+/** This bundle and the server disagree. Reloading is always the user's tap, so it cannot loop. */
+function UpgradeScreen() {
+  const notReady = useUpgradeStore(updateNotReady);
+  return (
+    <div data-testid="upgrade-screen" className="flex flex-1 flex-col">
+      <Screen
+        title={notReady ? 'Update in progress' : 'New version available'}
+        actions={
+          <>
+            <button type="button" className={PRIMARY} onClick={() => reloadForUpdate()}>
+              {notReady ? 'Try again' : 'Reload'}
+            </button>
+            <HomeLink />
+          </>
+        }
+      >
+        <Note>
+          {notReady
+            ? "The new version isn't ready yet. Try again shortly."
+            : 'FELT has been updated. Reload to keep playing.'}
+        </Note>
+      </Screen>
+    </div>
   );
 }
 

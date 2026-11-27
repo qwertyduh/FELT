@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import {
   PublicRoomStateSchema,
+  parseTolerant,
   type PublicRoomState,
   type ServerToClientEvents,
 } from '@felt/protocol';
+import { clearUpgrade, requireReload } from './upgradeStore';
 
 type PrivateHand = Parameters<ServerToClientEvents['hand:private']>[0];
 type HostInbox = Parameters<ServerToClientEvents['host:inbox']>[0];
@@ -55,16 +57,21 @@ export const initialRoomState: RoomStoreState = {
 export const useRoomStore = create<RoomStoreState>(() => initialRoomState);
 
 /**
+ * Unknown keys are ignored; anything else wrong drops the state and asks for a reload, so a table
+ * never just freezes.
+ *
  * Applies only newer versions of the same room; right after a reconnect the version already held
  * is accepted too (nothing changed while away: one version always has one content). Returns
  * whether it was applied.
  */
 export function applyRoomState(next: unknown): boolean {
-  const parsed = PublicRoomStateSchema.safeParse(next);
+  const parsed = parseTolerant(PublicRoomStateSchema, next);
   if (!parsed.success) {
     useRoomStore.setState((s) => ({ invalidDropped: s.invalidDropped + 1 }));
+    requireReload('payload');
     return false;
   }
+  clearUpgrade('payload');
   const incoming = parsed.data;
   const s = useRoomStore.getState();
   const sameRoom = s.room?.code === incoming.code;

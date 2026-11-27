@@ -4,14 +4,18 @@ import {
   type Socket,
   type SocketOptions,
 } from 'socket.io-client';
-import type {
-  Ack,
-  ClientEventName,
-  ClientToServerEvents,
-  ServerToClientEvents,
+import {
+  PROTOCOL_VERSION,
+  UPGRADE_REQUIRED,
+  type Ack,
+  type ClientEventName,
+  type ClientToServerEvents,
+  type HandshakeAuth,
+  type ServerToClientEvents,
 } from '@felt/protocol';
 import { useAuthStore } from './../authStore';
 import { setConnectionStatus } from './connectionStore';
+import { clearUpgrade, requireReload, resetUpgrade } from './upgradeStore';
 
 export type FeltSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 export type IoFactory = (url: string, opts: Partial<ManagerOptions & SocketOptions>) => FeltSocket;
@@ -70,6 +74,12 @@ async function defaultRefresh(): Promise<void> {
   if (data.session) applySession(data.session);
 }
 
+/** The server's protocol version from an `upgrade_required` refusal. */
+function serverProtocol(err: unknown): number | null {
+  const v = (err as { data?: { protocol?: unknown } } | null)?.data?.protocol;
+  return typeof v === 'number' ? v : null;
+}
+
 function errorCode(err: unknown): string {
   const e = err as { data?: { code?: unknown }; message?: unknown } | null;
   if (e && typeof e.data?.code === 'string') return e.data.code;
@@ -119,9 +129,11 @@ export function createSocketClient(options: SocketClientOptions): SocketClient {
     reconnectionDelayMax: backoffMaxMs,
     randomizationFactor: 0.5,
     auth: (cb) => {
+      const send = (token: string): void =>
+        cb({ token, protocol: PROTOCOL_VERSION } satisfies HandshakeAuth);
       void Promise.resolve(getToken()).then(
-        (token) => cb({ token: token ?? '' }),
-        () => cb({ token: '' }),
+        (token) => send(token ?? ''),
+        () => send(''),
       );
     },
   });
@@ -197,6 +209,7 @@ export function createSocketClient(options: SocketClientOptions): SocketClient {
     unavailableAttempts = 0;
     everConnected = true;
     clearRetry();
+    clearUpgrade('handshake');
     setConnectionStatus('connected');
     void scheduleProactive();
   });
@@ -212,7 +225,13 @@ export function createSocketClient(options: SocketClientOptions): SocketClient {
   socket.on('connect_error', (err) => {
     if (!wanted) return;
     const code = errorCode(err);
-    if (code === 'unauthorized' || code === 'token_expired') {
+    if (code === UPGRADE_REQUIRED) {
+      // Not an auth failure: no refresh, no sign-out. Keep trying with backoff, since a server
+      // that is behind this bundle will catch up.
+      requireReload('handshake', serverProtocol(err));
+      setConnectionStatus('reconnecting', code);
+      scheduleRetry(backoff(unavailableAttempts++));
+    } else if (code === 'unauthorized' || code === 'token_expired') {
       authFailures += 1;
       if (authFailures > maxAuthFailures) {
         setConnectionStatus('error', code);
@@ -246,6 +265,7 @@ export function createSocketClient(options: SocketClientOptions): SocketClient {
       clearProactive();
       socket.disconnect();
       setConnectionStatus('idle');
+      resetUpgrade();
     },
     on: ((event: never, handler: never) => socket.on(event, handler)) as FeltSocket['on'],
     off: ((event: never, handler: never) => socket.off(event, handler)) as FeltSocket['off'],

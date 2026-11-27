@@ -359,6 +359,12 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 
 ---
 
+## Review fixes after Stage C
+- _Opus review of Stage C found no chip or engine-rule bugs; four infrastructure findings were fixed and tested (GO): connected rooms no longer expire, saves are compare-and-set, `/ready` readiness check, protocol version handshake._
+- _Open, non-blocking: after a save that failed ambiguously nothing re-checks until another task runs (an award can then pay with no dispute window); a top-up approval landing that way sends no decision notice; the protocol fingerprint test misses regex-after-pipe and refine changes (bump by hand) and is local only; REST is not versioned; two overlapping servers can mark each others users away. Review notes left open: join-queue squatting, no per-user socket cap, unlimited disputes, join-request expiry timers not re-armed after a restart._
+
+---
+
 ## Stage D — Online mode
 
 ### ⬜ P47 · Server dealing & private hands
