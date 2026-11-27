@@ -81,8 +81,6 @@ export class JoinService {
   private readonly expiryTimers = new Map<RoomCode, unknown>();
   private readonly presenceTimers = new Map<RoomCode, NodeJS.Timeout>();
   private readonly presenceDebounceMs: number;
-  /** Rooms each user is waiting on (`room:cancel_request` has no payload). */
-  private readonly waiting = new Map<string, Set<RoomCode>>();
   /** Keeps one user's request/cancel intents in arrival order. */
   private readonly serial = new KeyedSerial();
   private readonly joinLimit: KeyedLimiter;
@@ -117,7 +115,7 @@ export class JoinService {
     onClientEvent(
       socket,
       'room:cancel_request',
-      () => this.guard(() => this.cancelRequest(socket)),
+      ({ code }) => this.guard(() => this.cancelRequest(socket, code)),
       log,
     );
     onClientEvent(
@@ -207,29 +205,29 @@ export class JoinService {
     });
   }
 
-  private cancelRequest(socket: FeltSocket): Promise<Ack> {
+  private cancelRequest(socket: FeltSocket, code: RoomCode): Promise<Ack> {
     const { userId } = socket.data.user;
+    // The code is client-chosen, so a cancel with nothing to cancel spends the same per-user
+    // budget as a missed `room:enter`. A real cancel is refunded.
+    if (!this.enterLimit.take(userId)) {
+      return Promise.resolve(errorAck('rate_limited', 'too many attempts'));
+    }
+    // One answer for "no such room" and "nothing pending there": no code probing.
+    const nothing = () => errorAck('not_found', 'no pending request');
     return this.serial.run(userId, async () => {
-      let cancelled = false;
-      for (const code of [...(this.waiting.get(userId) ?? [])]) {
-        const actor = await this.registry.get(code);
-        if (!actor) {
-          this.stopWaiting(code, userId);
-          continue;
-        }
-        const out = await actor.enqueue((room) => {
-          const pruned = pruneExpired(room, this.timers.now());
-          const r = cancelJoin(pruned.room, userId);
-          return { room: r.room, result: { removed: r.removed, expired: pruned.expired } };
-        });
-        this.stopWaiting(code, userId);
-        this.afterChange(code, actor.state(), out.expired);
-        if (out.removed) {
-          cancelled = true;
-          this.sendInbox(code, actor.state());
-        }
-      }
-      return cancelled ? OK : errorAck('not_found', 'no pending request');
+      const actor = await this.registry.get(code);
+      if (!actor) return nothing();
+      const out = await actor.enqueue((room) => {
+        const pruned = pruneExpired(room, this.timers.now());
+        const r = cancelJoin(pruned.room, userId);
+        return { room: r.room, result: { removed: r.removed, expired: pruned.expired } };
+      });
+      this.stopWaiting(code, userId);
+      this.afterChange(code, actor.state(), out.expired);
+      if (!out.removed) return nothing();
+      this.enterLimit.refund(userId);
+      this.sendInbox(code, actor.state());
+      return OK;
     });
   }
 
@@ -363,16 +361,10 @@ export class JoinService {
     const { userId } = socket.data.user;
     for (const name of socket.rooms) if (name.startsWith('join:')) void socket.leave(name);
     void socket.join(joinWaitChannel(code, userId));
-    const codes = this.waiting.get(userId) ?? new Set<RoomCode>();
-    codes.add(code);
-    this.waiting.set(userId, codes);
   }
 
   private stopWaiting(code: RoomCode, userId: string): void {
     this.io.in(joinWaitChannel(code, userId)).socketsLeave(joinWaitChannel(code, userId));
-    const codes = this.waiting.get(userId);
-    codes?.delete(code);
-    if (codes?.size === 0) this.waiting.delete(userId);
   }
 
   private decide(

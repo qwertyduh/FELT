@@ -8,13 +8,18 @@ import {
   type RoomCode,
   type RoomPreview,
 } from '@felt/protocol';
+import { HostInbox } from '../components/HostInbox';
 import { apiFetch } from '../lib/api';
 import { useAuthStore } from '../lib/authStore';
 import { getWebEnv } from '../lib/env';
 import { createJoinSession, type JoinSession, type JoinState } from '../lib/joinSession';
 import { useConnectionStore } from '../lib/realtime/connectionStore';
 import { useRoomStore } from '../lib/realtime/roomStore';
-import { authStoreToken, createSocketClient } from '../lib/realtime/socketClient';
+import {
+  authStoreToken,
+  createSocketClient,
+  type SocketClient,
+} from '../lib/realtime/socketClient';
 
 const PRIMARY =
   'min-h-14 w-full rounded-2xl bg-brass px-4 text-lg font-semibold text-felt-950 transition active:brightness-90 disabled:bg-felt-800 disabled:text-cream/40';
@@ -50,8 +55,10 @@ function Screen({
   return (
     <>
       <div className="flex flex-1 flex-col items-center justify-center gap-4 py-6 text-center">
-        <div role="status">
-          <h1 className="font-display text-3xl font-semibold text-balance text-cream">{title}</h1>
+        <div role="status" className="w-full">
+          <h1 className="font-display text-3xl font-semibold text-balance wrap-anywhere text-cream">
+            {title}
+          </h1>
         </div>
         {children}
       </div>
@@ -65,7 +72,7 @@ function Screen({
 }
 
 const Note = ({ children }: { children: ReactNode }) => (
-  <p className="max-w-[32ch] text-base text-cream/75">{children}</p>
+  <p className="max-w-[min(32ch,100%)] text-base wrap-anywhere text-cream/75">{children}</p>
 );
 
 const HomeLink = () => (
@@ -103,7 +110,7 @@ function PreviewScreen({
   return (
     <>
       <div className="flex flex-1 flex-col justify-center py-4">
-        <h1 className="font-display text-3xl font-semibold break-words text-cream">
+        <h1 className="font-display text-3xl font-semibold wrap-anywhere text-cream">
           {preview.hostUsername}&apos;s table
         </h1>
         <p className="mt-1 text-base text-cream/75">
@@ -236,7 +243,15 @@ function DeniedScreen({
 }
 
 /** Minimal until the waiting room and seat picker (P38). */
-function EnteredScreen({ userId, online }: { userId: string; online: boolean }) {
+function EnteredScreen({
+  userId,
+  online,
+  client,
+}: {
+  userId: string;
+  online: boolean;
+  client: SocketClient;
+}) {
   const room = useRoomStore((s) => s.room);
   const hosting = room?.hostId === userId;
   return (
@@ -251,6 +266,7 @@ function EnteredScreen({ userId, online }: { userId: string; online: boolean }) 
           </p>
         )}
       </Screen>
+      <HostInbox userId={userId} ready={online} client={client} />
     </div>
   );
 }
@@ -259,7 +275,9 @@ function Body({
   session,
   state,
   userId,
+  client,
 }: {
+  client: SocketClient;
   session: JoinSession;
   state: JoinState;
   userId: string;
@@ -276,7 +294,9 @@ function Body({
       </Screen>
     );
   }
-  if (phase.name === 'entered') return <EnteredScreen userId={userId} online={state.ready} />;
+  if (phase.name === 'entered') {
+    return <EnteredScreen userId={userId} online={state.ready} client={client} />;
+  }
 
   const retry = (
     <button type="button" className={PRIMARY} onClick={() => session.retry()}>
@@ -402,14 +422,16 @@ function Frame({ code, children }: { code: string; children: ReactNode }) {
 
 function Visit({ code, userId }: { code: RoomCode; userId: string }) {
   // Nothing here touches the network until `start()`.
-  const [session] = useState(() =>
-    createJoinSession({
+  const [{ client, session }] = useState(() => {
+    const client = createSocketClient({ url: getWebEnv().serverUrl, getToken: authStoreToken });
+    const session = createJoinSession({
       code,
       userId,
-      client: createSocketClient({ url: getWebEnv().serverUrl, getToken: authStoreToken }),
+      client,
       fetchPreview: async () => RoomPreviewSchema.parse(await apiFetch(`/rooms/${code}`)),
-    }),
-  );
+    });
+    return { client, session };
+  });
 
   // One socket per visit: connected on mount, dropped on leaving.
   useEffect(() => {
@@ -419,12 +441,20 @@ function Visit({ code, userId }: { code: RoomCode; userId: string }) {
 
   return (
     <Frame code={code}>
-      <Connected session={session} userId={userId} />
+      <Connected session={session} userId={userId} client={client} />
     </Frame>
   );
 }
 
-function Connected({ session, userId }: { session: JoinSession; userId: string }) {
+function Connected({
+  session,
+  userId,
+  client,
+}: {
+  session: JoinSession;
+  userId: string;
+  client: SocketClient;
+}) {
   const state = useStore(session.store);
   const lost = !state.connected && !['loading', 'missing', 'ended'].includes(state.phase.name);
   return (
@@ -434,7 +464,7 @@ function Connected({ session, userId }: { session: JoinSession; userId: string }
           Reconnecting…
         </p>
       )}
-      <Body session={session} state={state} userId={userId} />
+      <Body session={session} state={state} userId={userId} client={client} />
     </>
   );
 }

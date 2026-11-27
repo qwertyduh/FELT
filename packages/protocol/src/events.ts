@@ -101,7 +101,8 @@ export const REACTION_EMOJIS = ['👍', '👏', '😂', '😮', '😭', '😡', 
 
 export const clientEventSchemas = {
   'room:request_join': z.object({ code: RoomCodeSchema }).strict(),
-  'room:cancel_request': NoPayload,
+  /** Names the room: a user's requests elsewhere stay pending. */
+  'room:cancel_request': z.object({ code: RoomCodeSchema }).strict(),
   'room:enter': z.object({ code: RoomCodeSchema }).strict(),
   'room:sit': z.object({ seat: SeatIndexSchema, buyIn: PositiveChipsSchema }).strict(),
   'room:sit_out': NoPayload,

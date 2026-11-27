@@ -94,7 +94,14 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let unbind: (() => void) | undefined;
 
-  const remember = (memory: JoinMemory | null) => writeJoinMemory(userId, code, memory);
+  /** The last write reached storage, which all tabs share: from then on it is the truth. */
+  let persisted = false;
+  const remember = (memory: JoinMemory | null) => {
+    persisted = writeJoinMemory(userId, code, memory);
+  };
+  /** Our pending request is gone from shared storage: another tab cancelled or settled it. */
+  const droppedElsewhere = () =>
+    get().phase.name === 'pending' && persisted && readJoinMemory(userId, code) === null;
 
   function show(phase: JoinPhase): void {
     clearTimeout(expiryTimer);
@@ -173,12 +180,17 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
     }
     if (phase.name === 'requesting') return void ask();
     if (phase.name === 'expired' || phase.name === 'ended' || phase.name === 'missing') return;
-    const memory: JoinMemory | null =
+    // What this tab holds counts only if storage could not keep it: never revive a request that
+    // another tab removed.
+    const held: JoinMemory | null =
       phase.name === 'pending'
         ? { kind: 'pending', requestId: phase.requestId, deadline: phase.deadline }
         : phase.name === 'denied'
           ? { kind: 'denied', until: phase.until }
-          : readJoinMemory(userId, code);
+          : null;
+    const memory = persisted
+      ? readJoinMemory(userId, code)
+      : (held ?? readJoinMemory(userId, code));
     if (memory?.kind === 'pending') {
       if (memory.deadline <= Date.now()) return show({ name: 'expired' });
       show({ name: 'pending', requestId: memory.requestId, deadline: memory.deadline });
@@ -192,6 +204,7 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
 
   async function ask(): Promise<void> {
     if (!client.socket.connected || asking) return;
+    if (droppedElsewhere()) return show({ name: 'preview' });
     const at = epoch;
     const sentAt = Date.now();
     asking = true;
@@ -264,6 +277,17 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
     }
   };
 
+  /**
+   * Shared storage changed. A request removed before its deadline was cancelled or settled in
+   * another tab (an expiry cannot come early); a decision of our own still applies afterwards.
+   */
+  const onStorage = () => {
+    const { phase } = get();
+    if (phase.name === 'pending' && Date.now() < phase.deadline && droppedElsewhere()) {
+      show({ name: 'preview' });
+    }
+  };
+
   const onConnect = () => {
     epoch += 1;
     asking = false;
@@ -304,6 +328,7 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
       client.socket.on('disconnect', onDisconnect);
       client.socket.on('room:join_pending', onPending);
       client.socket.on('room:join_decision', onDecision);
+      window.addEventListener('storage', onStorage);
       void loadPreview();
       client.connect();
     },
@@ -317,6 +342,7 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
       client.socket.off('disconnect', onDisconnect);
       client.socket.off('room:join_pending', onPending);
       client.socket.off('room:join_decision', onDecision);
+      window.removeEventListener('storage', onStorage);
       client.disconnect();
       resetRoom();
     },
@@ -331,7 +357,7 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
     cancel() {
       if (get().phase.name !== 'pending' || !client.socket.connected) return;
       const at = epoch;
-      void client.emitWithAck('room:cancel_request', undefined).then((res) => {
+      void client.emitWithAck('room:cancel_request', { code }).then((res) => {
         // A decision that arrived meanwhile wins.
         if (at !== epoch || get().phase.name !== 'pending') return;
         if (res.ok || res.error.code === 'not_found') show({ name: 'preview' });

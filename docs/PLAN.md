@@ -297,10 +297,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** a two-browser Playwright test covers request → admit, and request → deny shows the cooldown.
 - _Note: GO round 1. Join flow in routes/Room.tsx and lib/{joinSession,joinStorage,returnTo}.ts; the session store `ready` flag is set only after the room:enter ack (P37/P38 gate sends on it). Added a Cancel request button; returnTo applies to every deep link; leaving the screen does not cancel. Nothing owns typing a room code by hand (PRD 5.2): owner to decide. P35 follow-ups fixed. Fixed in P37: long usernames overflow the pending screen, a cancelled request re-created by a second tab, room:cancel_request cancelling every room, a corrupt denied-until, missing returnTo unit test. Open: no auto retry after a failed preview load._
 
-### ⬜ P37 · Web: host request inbox
+### ✅ P37 · Web: host request inbox
 - **Needs:** P36
 - **Do:** Host-only stacked request cards (join + top-up types, with top-up showing a placeholder until P43) offering one-tap Admit/Deny without leaving the table.
 - **Done when:** Playwright shows the host admitting 2 queued requests.
+- _Note: GO round 3 (round 1: cards moving under the thumb could admit the wrong person; round 2: same via a long touch press; both fixed). components/HostInbox.tsx: fixed-height top-anchored list in normal flow, new or moved cards ignore taps for 400ms, a click must match its pointerdown. P36 follow-ups fixed; room:cancel_request now takes {code}. Top-up card is a text placeholder until P43. P39/P40: recheck the inbox height once the table and action bar share the screen (about one card visible at 375x667). A host transfer (P44) must send the new host the inbox._
 
 ### ⬜ P38 · Web: waiting room & seat picker
 - **Needs:** P31, P37

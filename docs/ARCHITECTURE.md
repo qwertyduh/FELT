@@ -230,7 +230,7 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | Event | Payload | Who |
 |---|---|---|
 | `room:request_join` | `{ code }` | Anyone not yet admitted |
-| `room:cancel_request` | — | Requester |
+| `room:cancel_request` | `{ code }` | Requester |
 | `room:enter` | `{ code }` | Admitted player (incl. on reconnect) |
 | `room:sit` | `{ seat, buyIn }` | Admitted player; `minBuyIn ≤ buyIn ≤ maxBuyIn` |
 | `room:sit_out` / `room:sit_in` | — | Player |

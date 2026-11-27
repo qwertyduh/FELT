@@ -58,8 +58,11 @@ export function applyRoomState(next: unknown): boolean {
   const sameRoom = s.room?.code === incoming.code;
   const floor = s.needsResync ? s.lastVersion : s.lastVersion + 1;
   if (sameRoom && incoming.version < floor) return false;
+  // Only a switch from ANOTHER room clears it: on the first state of a room, `host:inbox` (which
+  // the server sends just before it) must survive.
+  const switched = s.room !== null && !sameRoom;
   useRoomStore.setState({
-    ...(sameRoom ? {} : { ...initialRoomState, invalidDropped: s.invalidDropped }),
+    ...(switched ? { ...initialRoomState, invalidDropped: s.invalidDropped } : {}),
     room: incoming,
     lastVersion: incoming.version,
     status: 'ready',
@@ -103,6 +106,15 @@ export function addTopUpRequest(req: TopUpRequest): void {
         ...s.hostInbox.topUpRequests.filter((r) => r.requestId !== req.requestId),
         req,
       ],
+    },
+  }));
+}
+
+export function removeJoinRequest(requestId: string): void {
+  useRoomStore.setState((s) => ({
+    hostInbox: {
+      ...s.hostInbox,
+      joinRequests: s.hostInbox.joinRequests.filter((r) => r.requestId !== requestId),
     },
   }));
 }
