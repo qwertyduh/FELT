@@ -419,6 +419,47 @@ function voidRaises(
 }
 
 /**
+ * The part of a player's chips that nobody else's cover: what `foldOut` hands back. Always part of
+ * this street's bet; a posted blind of their own stays.
+ */
+function uncalledOnFold(state: HandState, me: HandPlayer): number {
+  const covered = Math.max(
+    postedBlind(state, me),
+    ...state.players.filter((p) => p !== me).map((p) => p.committed),
+  );
+  return Math.max(0, me.committed - covered);
+}
+
+/**
+ * What leaving the table would do to this player's cards right now, or null when they hold none in
+ * a running hand (not dealt in, folded, or the hand has ended).
+ *
+ * `staysLive`: all-in, at showdown, or nothing left to bet (an all-in run-out), so they cannot be
+ * made to forfeit a hand they have already paid to see through; what comes back is not known until
+ * it ends (`returned` is 0). Otherwise they are folded with `foldOut`, and `returned` is what
+ * that puts back on their stack at once (including the settlement when the fold ends the hand).
+ * More of their chips can still come back later in the hand.
+ */
+export function leaveOutlook(
+  state: HandState,
+  playerId: string,
+): { staysLive: boolean; returned: number } | null {
+  const me = state.players.find((p) => p.playerId === playerId);
+  if (me === undefined || me.status === 'folded') return null;
+  if (state.street === 'ended' || state.result !== null) return null;
+  const canAct = state.players.filter(isActive).length;
+  const staysLive =
+    me.status === 'all_in' ||
+    state.street === 'showdown' ||
+    (canAct < 2 && state.currentActor !== me.seat && isBettingComplete(state));
+  if (staysLive) return { staysLive, returned: 0 };
+  // Asked of `foldOut` itself: when the fold ends the hand it also settles, which can return more.
+  const folded = foldOut(state, playerId);
+  const after = folded.ok ? folded.value.state.players.find((p) => p.playerId === playerId) : me;
+  return { staysLive, returned: (after ?? me).stack - me.stack };
+}
+
+/**
  * A player gives up their hand without waiting for their turn (P33: they leave the table). Only a
  * player who can still act (`active`) on a betting street may be folded; an all-in player's hand
  * stays live to showdown.
@@ -446,11 +487,7 @@ export function foldOut(state: HandState, playerId: string): Result<Transition> 
   }
   if (!isActive(me)) return fail('illegal_action', 'only a player who can still act may fold');
 
-  const covered = Math.max(
-    postedBlind(state, me),
-    ...state.players.filter((p) => p !== me).map((p) => p.committed),
-  );
-  const back = Math.max(0, me.committed - covered); // always part of this street's bet
+  const back = uncalledOnFold(state, me);
   const gone: HandPlayer = {
     ...me,
     status: 'folded',

@@ -184,12 +184,15 @@ export function Table({
   userId,
   selected,
   onPick,
+  controls,
 }: {
   room: PublicRoomState;
   userId: string;
   selected: number | null;
   /** Null: the viewer cannot take a seat now, so open seats are not buttons. */
   onPick: ((seat: number) => void) | null;
+  /** Laid over the free bottom corners of the felt (sit out, leave). */
+  controls?: ReactNode;
 }) {
   const count = room.seats.length;
   const mine = room.seats.findIndex((s) => s?.userId === userId);
@@ -277,6 +280,7 @@ export function Table({
           );
         })}
       </ul>
+      {controls}
     </div>
   );
 }

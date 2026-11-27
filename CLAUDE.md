@@ -13,7 +13,7 @@ Private rooms only: the host approves every join, sets the minimum buy-in, and a
 - `DESIGN.md` is the superseded v1 plan. Don't follow it where it conflicts with `docs/`.
 
 ## Status
-Rebuild in progress on branch `rebuild`. Done: P01–P45 (foundation, auth, usernames, the pure poker engine, rooms, and the whole hybrid mode). P46 (hybrid E2E game) passes locally; its "passes in CI" criterion is waiting on an owner decision. Next: P47 (Stage D, online mode). Check `docs/PLAN.md` for the per-phase status and notes. The commands below are the working ones; `npm run e2e` runs the Playwright suite (needs local Supabase, Redis and the server).
+Rebuild in progress on branch `rebuild`. Done: P01–P46 (foundation, auth, usernames, the pure poker engine, rooms, and the whole hybrid mode), plus a Leave button, host-set blind increases and review fixes. Test files stay local, so CI does not run them. Next: P47 (Stage D, online mode). Check `docs/PLAN.md` for the per-phase status and notes. The commands below are the working ones; `npm run e2e` runs the Playwright suite (needs local Supabase, Redis and the server).
 
 ## Layout (npm workspaces)
 - `apps/web`: Vite + React + TS + Tailwind + Zustand PWA (Vercel)

@@ -71,12 +71,15 @@ export function SeatMap({
   userId,
   selected,
   onPick,
+  controls,
 }: {
   room: PublicRoomState;
   userId: string;
   selected: number | null;
   /** Null: the viewer cannot take a seat now, so open seats are not buttons. */
   onPick: ((seat: number) => void) | null;
+  /** In the free middle of the felt (sit out, leave). */
+  controls?: React.ReactNode;
 }) {
   const count = room.seats.length;
   const taken = room.seats.filter(Boolean).length;
@@ -133,6 +136,7 @@ export function SeatMap({
           );
         })}
       </ul>
+      {controls}
     </div>
   );
 }

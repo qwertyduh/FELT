@@ -116,6 +116,7 @@ Chips exist only for the length of a game. The host sets a minimum buy-in and ap
   - An approved top-up is added to the stack **between hands**, never mid-hand.
   - It must keep the stack within the max buy-in, if one is set.
 - Every buy-in and top-up is recorded in the session ledger and shown in the recap.
+- **Sit out / leave:** a seated player can sit out (from the next hand) and come back, or leave their seat after a confirm. Leaving in the lobby refunds the buy-in. Mid-game the stack is the player's cash out and to sit again they bring back the whole of it. Leaving mid-hand folds them and chips put into the hand are not refunded, except any that no player still in the hand ends up matching (those follow them, possibly later); all-in cards stay in play.
 
 ### 5.4 Online mode
 - The server shuffles (with a cryptographically secure shuffle) and deals. Each player's hole cards are sent only to that player.

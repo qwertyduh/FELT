@@ -13,7 +13,7 @@ import {
   applyAction,
   applyHostAction,
   foldOut,
-  isBettingComplete,
+  leaveOutlook,
   startHand,
   type EngineError,
   type HandState,
@@ -617,20 +617,10 @@ export function dispute(
 }
 
 /**
- * Whether a leaver's cards stay in play: all-in, at showdown, or nothing left to bet (an all-in
- * run-out), so they cannot be made to forfeit a hand they have already paid to see through.
- */
-function handStaysLive(state: HandState, seat: number, status: string): boolean {
-  if (status === 'all_in' || state.street === 'showdown') return true;
-  const canAct = state.players.filter((p) => p.status === 'active').length;
-  return canAct < 2 && state.currentActor !== seat && isBettingComplete(state);
-}
-
-/**
  * `room:leave`, also during a hand. Standard rule: leaving folds your hand at once; chips others
  * have bet against stay in the pot, and you take the rest, including any uncalled part of your bet
- * (engine `foldOut`). If your cards stay live (see above)
- * the seat is kept until the hand ends and is then cashed out. Players who are not in the running
+ * (engine `foldOut`). If your cards stay live
+ * (engine `leaveOutlook`) the seat is kept until the hand ends and is then cashed out. Players who are not in the running
  * hand, or have folded, leave immediately.
  */
 export function leave(room: Readonly<RoomRecord>, userId: string, now: number): GameResult {
@@ -646,7 +636,7 @@ export function leave(room: Readonly<RoomRecord>, userId: string, now: number): 
 
   let state = hand.state;
   if (player.status !== 'folded') {
-    if (handStaysLive(state, player.seat, player.status)) {
+    if (leaveOutlook(state, userId)?.staysLive) {
       return done({
         ...dropTopUps(room, userId),
         // As for any departure: no undo goes back past it.

@@ -26,6 +26,7 @@ import { useStillCards } from '../lib/useStillCards';
 import { BuyMore } from './BuyMore';
 import { RoomLog } from './hybrid/RoomLog';
 import { InviteButton } from './InviteButton';
+import { SeatControls } from './SeatControls';
 import { SeatMap } from './SeatMap';
 import { Table, TableSummary } from './Table';
 
@@ -110,13 +111,13 @@ function BuyInForm({
       </div>
       {exact !== null && exact > 0 && (
         <p id="buy-in-range" className="text-sm text-cream">
-          You left this game with <strong className="text-brass">{chips(exact)}</strong> chips. You
-          can only sit back down with exactly that.
+          You sit back down with your whole cash out, now{' '}
+          <strong className="text-brass">{chips(exact)}</strong> chips.
         </p>
       )}
       {exact === 0 && (
         <p id="buy-in-range" className="text-sm text-cream">
-          You left this game with no chips. Sit down with <strong className="text-brass">0</strong>,
+          Your cash out is 0 chips now. Sit down with <strong className="text-brass">0</strong>,
           then tap Buy more to ask the host for chips.
         </p>
       )}
@@ -249,7 +250,12 @@ export function WaitingRoom({
     const res = await client.emitWithAck('room:sit', { seat: selected, buyIn });
     sending.current = false;
     setBusy(false);
-    if (res.ok) return setSelected(null);
+    if (res.ok) {
+      // Seated: what we were told about coming back is spent, whatever happens next.
+      setReturning(null);
+      setNotice(null);
+      return setSelected(null);
+    }
     const back = returningFrom(res.error);
     if (back) return setReturning(back);
     if (res.error.code === 'seat_taken') {
@@ -312,6 +318,11 @@ export function WaitingRoom({
     </span>
   );
   const seats = { room, userId, selected, onPick: canSit ? pick : null };
+  const seatControls = (place: 'table' | 'map') =>
+    mine &&
+    room.status !== 'ended' && (
+      <SeatControls room={room} me={mine} ready={ready} client={client} place={place} />
+    );
   const buyMore = mine && room.status !== 'ended' && (
     <BuyMore room={room} me={mine} ready={ready} client={client} compact={started} />
   );
@@ -332,14 +343,14 @@ export function WaitingRoom({
           <InviteButton code={room.code} />
         </div>
         {started ? (
-          <Table {...seats} />
+          <Table {...seats} controls={seatControls('table')} />
         ) : (
           <>
             <p className="flex flex-wrap justify-between gap-x-3 text-sm text-brass tabular-nums">
               {blinds}
               <span>Buy-in {buyInRange(room.settings)}</span>
             </p>
-            <SeatMap {...seats} />
+            <SeatMap {...seats} controls={seatControls('map')} />
           </>
         )}
       </div>

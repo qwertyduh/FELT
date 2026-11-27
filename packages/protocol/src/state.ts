@@ -45,6 +45,14 @@ export const PublicSeatSchema = z
     sittingOut: z.boolean(),
     connected: z.boolean(),
     muted: z.boolean(),
+    /** Left while their cards stay in play: the seat is cashed out when the hand ends. */
+    leaving: z.boolean(),
+    /**
+     * What leaving now would do to the cards in the running hand; null without any (not dealt in,
+     * folded, hand over, or already leaving). `returned` is what a fold would put back on their stack
+     * at once; more can follow later in the hand.
+     */
+    onLeave: z.object({ staysLive: z.boolean(), returned: TableChipsSchema }).strict().nullable(),
   })
   .strict();
 export type PublicSeat = z.infer<typeof PublicSeatSchema>;

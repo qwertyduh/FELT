@@ -3,7 +3,7 @@
  * field (an allow-list). Never spread a room, seat, hand or player object: that is how hole cards,
  * the deck, the ledger or join requests would leak.
  */
-import { legalActions, potsOnShow, type HandState } from '@felt/engine';
+import { leaveOutlook, legalActions, potsOnShow, type HandState } from '@felt/engine';
 import type { PublicHand, PublicRoomState, PublicSeat, RoomLogEntry } from '@felt/protocol';
 import { upcomingIncrease } from './blinds';
 import type { RoomRecord } from './roomStore';
@@ -67,6 +67,12 @@ function toPublicHand(live: LiveHand): PublicHand {
       disputed: a.disputed,
     })),
   };
+}
+
+/** From what everyone has seen of the betting, so public. */
+function onLeave(state: HandState, userId: string): PublicSeat['onLeave'] {
+  const outlook = leaveOutlook(state, userId);
+  return outlook ? { staysLive: outlook.staysLive, returned: outlook.returned } : null;
 }
 
 /** The room's stored hand in the builder's shape. */
@@ -133,6 +139,8 @@ export function toPublicState(
       sittingOut: seat.sittingOut,
       connected: isConnected(seat.userId),
       muted: false, // P55
+      leaving: seat.leaving === true,
+      onLeave: player && hand && !seat.leaving ? onLeave(hand.state, seat.userId) : null,
     };
   });
   return {
