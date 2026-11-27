@@ -22,6 +22,7 @@ import type { RandomInt } from './rooms/code';
 import { RoomStore } from './rooms/roomStore';
 import { RoomRegistry } from './rooms/roomRegistry';
 import { JoinService } from './rooms/joinService';
+import { SeatService } from './rooms/seatService';
 import { roomChannel } from './realtime/channels';
 
 function hasPinoPretty(): boolean {
@@ -205,6 +206,12 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
     });
     app.realtime.register(joins.register);
     app.addHook('onClose', async () => joins.close());
+    const seats = new SeatService({
+      registry: roomRegistry,
+      db,
+      ...(deps.roomTimers ? { timers: deps.roomTimers } : {}),
+    });
+    app.realtime.register(seats.register);
   }
   registerMe(app, db);
   await registerUsernameRoutes(app, db);

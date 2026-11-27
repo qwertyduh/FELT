@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import {
-  PositiveChipsSchema,
   RoomCodeSchema,
   RoomSettingsSchema,
   RoomStatusSchema,
@@ -15,6 +14,9 @@ export const MAX_OPEN_ROOMS_PER_USER = 5;
 export const CODE_ATTEMPTS = 8;
 
 const UserId = z.string().min(1).max(64);
+
+/** ARCHITECTURE's ledger kinds plus `cash_out` (chips leaving the table with a player). */
+export const LEDGER_KINDS = ['buy_in', 'top_up', 'adjust', 'hand_result', 'cash_out'] as const;
 
 /** Server-side room record (`room:{code}`). Later phases extend the sub-shapes. */
 export const RoomRecordSchema = z
@@ -47,6 +49,8 @@ export const RoomRecordSchema = z
         .object({
           seat: z.number().int().min(0).max(8),
           userId: UserId,
+          /** Snapshot taken when sitting (usernames never change): no DB hit to broadcast. */
+          username: z.string().min(1).max(20),
           stack: z.number().int().min(0),
           sittingOut: z.boolean(),
         })
@@ -55,10 +59,12 @@ export const RoomRecordSchema = z
     ledger: z.array(
       z
         .object({
+          t: z.number().int(),
           userId: UserId,
-          type: z.string().max(32),
-          amount: PositiveChipsSchema,
-          at: z.number().int(),
+          kind: z.enum(LEDGER_KINDS),
+          /** A `cash_out` is 0 when the player left busted. */
+          amount: z.number().int().min(0),
+          note: z.string().max(100).optional(),
         })
         .strict(),
     ),

@@ -261,10 +261,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests cover admit, deny + cooldown, expiry, a non-host trying to admit, an admitted player reconnecting without asking again, and a requester never receiving `room:state`.
 - _Note: GO round 1. Join requests, admit/deny, cancel, 2 min expiry, 10 min cooldown and room:enter in rooms/{admission,joinService}.ts; channels `room:{code}` and `member:{code}:{userId}` are joined only by room:enter. Expiry is `room:join_decision {approved:false}` with no retryAfter; disconnect does not cancel a request. P36: re-send room:request_join (check the stored expiresAt first) and room:enter after every reconnect. Kick and room end must also remove sockets from both channels. Follow-ups: actor eviction race in requestJoin, per-user limit on room:enter (both folded into P31)._
 
-### ⬜ P31 · Seating & buy-in (server)
+### ✅ P31 · Seating & buy-in (server)
 - **Needs:** P30
 - **Do:** `room:sit {seat, buyIn}` (range-checked, writes a `buy_in` ledger entry), `sit_out`/`sit_in` and `leave`.
 - **Done when:** tests for a below-min or above-max buy-in, a taken seat, a full table and the ledger entry.
+- _Note: GO round 1. Seating in rooms/{seating,seatService}.ts; P30 follow-ups fixed. Defaults the spec did not cover (owner to confirm): lobby leave is a refund; after the game starts, leave records a new `cash_out` ledger kind and the player may only sit back with exactly that amount. P43 must give a player who left busted a way to buy back in (top-up is seated-only today). P52 must net `refund`/`return` entries and keep leavers usernames. P36/P37 must await the room:enter ack before sending seat events. P32: a stack above MAX_CHIPS must not break the public schema. P44 kick: cash out before removing admission. The ledger is unbounded._
 
 ### ⬜ P32 · Public state builder & broadcast
 - **Needs:** P31

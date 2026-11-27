@@ -16,7 +16,7 @@ import {
   type SocketRegistrar,
 } from '../realtime/handlers';
 import { joinWaitChannel, memberChannel, roomChannel } from '../realtime/channels';
-import { TokenBucket } from '../realtime/rateLimit';
+import { KeyedLimiter } from '../realtime/rateLimit';
 import {
   cancelJoin,
   decideJoin,
@@ -26,13 +26,19 @@ import {
   requestJoin,
   type JoinRecord,
 } from './admission';
+import { KeyedSerial } from './keyedSerial';
 import { RoomGoneError, type RoomRecord } from './roomStore';
 import type { RoomRegistry } from './roomRegistry';
 
 /** Per user across all sockets (the per-socket bucket alone is reset by reconnecting). */
 export const JOIN_BURST = 10;
 export const JOIN_PER_SEC = 10 / 60;
-const MAX_IDLE_BUCKETS = 1000;
+/**
+ * `room:enter` attempts that do not end in entry (unknown code, not admitted), per user: limits
+ * room-code probing. Other attempts are refunded, so normal reconnects are never throttled.
+ */
+export const ENTER_MISS_BURST = 20;
+export const ENTER_MISS_PER_SEC = 20 / 60;
 export const EXPIRY_RETRY_MS = 5_000;
 
 export interface JoinServiceDeps {
@@ -67,8 +73,9 @@ export class JoinService {
   /** Rooms each user is waiting on (`room:cancel_request` has no payload). */
   private readonly waiting = new Map<string, Set<RoomCode>>();
   /** Keeps one user's request/cancel intents in arrival order. */
-  private readonly chains = new Map<string, Promise<unknown>>();
-  private readonly buckets = new Map<string, { bucket: TokenBucket; used: number }>();
+  private readonly serial = new KeyedSerial();
+  private readonly joinLimit: KeyedLimiter;
+  private readonly enterLimit: KeyedLimiter;
   private closed = false;
 
   constructor(deps: JoinServiceDeps) {
@@ -77,6 +84,9 @@ export class JoinService {
     this.db = deps.db;
     this.timers = deps.timers ?? realTimers;
     this.newId = deps.newId ?? randomUUID;
+    const now = () => this.timers.now();
+    this.joinLimit = new KeyedLimiter(JOIN_PER_SEC, JOIN_BURST, now);
+    this.enterLimit = new KeyedLimiter(ENTER_MISS_PER_SEC, ENTER_MISS_BURST, now);
   }
 
   readonly register: SocketRegistrar = (socket, log) => {
@@ -121,46 +131,19 @@ export class JoinService {
     }
   }
 
-  private serial<T>(userId: string, fn: () => Promise<T>): Promise<T> {
-    const p = (this.chains.get(userId) ?? Promise.resolve()).then(fn, fn);
-    const tail = p
-      .catch(() => undefined)
-      .then(() => {
-        if (this.chains.get(userId) === tail) this.chains.delete(userId);
-      });
-    this.chains.set(userId, tail);
-    return p;
-  }
-
-  private allowJoin(userId: string): boolean {
-    const now = this.timers.now();
-    if (this.buckets.size >= MAX_IDLE_BUCKETS) {
-      const refillMs = (JOIN_BURST / JOIN_PER_SEC) * 1000;
-      for (const [id, b] of this.buckets) if (now - b.used >= refillMs) this.buckets.delete(id);
-    }
-    let entry = this.buckets.get(userId);
-    if (!entry) {
-      entry = {
-        bucket: new TokenBucket(JOIN_PER_SEC, JOIN_BURST, () => this.timers.now()),
-        used: now,
-      };
-      this.buckets.set(userId, entry);
-    }
-    entry.used = now;
-    return entry.bucket.take();
-  }
-
   private requestJoin(socket: FeltSocket, code: RoomCode): Promise<Ack> {
     const { userId } = socket.data.user;
-    if (!this.allowJoin(userId)) {
+    if (!this.joinLimit.take(userId)) {
       return Promise.resolve(errorAck('rate_limited', 'too many join requests'));
     }
-    return this.serial(userId, async () => {
-      const actor = await this.registry.get(code);
-      if (!actor) return notFound();
+    return this.serial.run(userId, async () => {
       if (!this.db) return errorAck('internal', 'usernames unavailable');
       const username = await findUsername(this.db, userId); // I/O stays outside the room queue
       if (username === null) return errorAck('forbidden', 'username required');
+      // Fetched after the lookup, with no I/O before `enqueue`: an actor held across a slow await
+      // could be evicted (disposed) meanwhile.
+      const actor = await this.registry.get(code);
+      if (!actor) return notFound();
       const requestId = this.newId();
       const now = () => this.timers.now();
 
@@ -206,7 +189,7 @@ export class JoinService {
 
   private cancelRequest(socket: FeltSocket): Promise<Ack> {
     const { userId } = socket.data.user;
-    return this.serial(userId, async () => {
+    return this.serial.run(userId, async () => {
       let cancelled = false;
       for (const code of [...(this.waiting.get(userId) ?? [])]) {
         const actor = await this.registry.get(code);
@@ -258,10 +241,25 @@ export class JoinService {
 
   private async enter(socket: FeltSocket, code: RoomCode): Promise<Ack> {
     const { userId } = socket.data.user;
+    // Taken up front (parallel probes cannot all slip past), refunded unless it was a miss.
+    if (!this.enterLimit.take(userId)) return errorAck('rate_limited', 'too many attempts');
+    let miss = false;
+    try {
+      return await this.tryEnter(socket, code, () => (miss = true));
+    } finally {
+      if (!miss) this.enterLimit.refund(userId);
+    }
+  }
+
+  private async tryEnter(socket: FeltSocket, code: RoomCode, missed: () => void): Promise<Ack> {
+    const { userId } = socket.data.user;
     const seq = (socket.data.enterSeq ?? 0) + 1;
     socket.data.enterSeq = seq;
     const actor = await this.registry.get(code);
-    if (!actor) return notFound();
+    if (!actor) {
+      missed();
+      return notFound();
+    }
     // Queued (even though it usually changes nothing) so the admission check and the channel join
     // cannot interleave with another change to the room.
     const out = await actor.enqueue((room) => {
@@ -277,7 +275,10 @@ export class JoinService {
     });
     const room = actor.state();
     this.afterChange(code, room, out.expired);
-    if (!out.admitted) return errorAck('not_admitted', 'the host has not admitted you');
+    if (!out.admitted) {
+      missed();
+      return errorAck('not_admitted', 'the host has not admitted you');
+    }
     if (out.ended) return errorAck('room_ended', 'room has ended');
     if (socket.data.enterSeq !== seq) return errorAck('forbidden', 'superseded by a newer request');
     if (!socket.connected) return OK;
