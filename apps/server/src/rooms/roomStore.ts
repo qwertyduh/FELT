@@ -67,6 +67,14 @@ export const RoomRecordSchema = z
       .strict()
       .optional(),
     /**
+     * Automatic blind increase (blinds.ts): from `at` (absolute epoch ms) the next dealt hand takes
+     * the next level. `pausedAt` freezes it. Absent when off or before the first hand.
+     */
+    blindClock: z
+      .object({ at: z.number().int(), pausedAt: z.number().int().optional() })
+      .strict()
+      .optional(),
+    /**
      * Seated players and the host who have no socket in the room (absence.ts): when that was
      * noticed, and until when a seat is held. Absolute epoch ms.
      */

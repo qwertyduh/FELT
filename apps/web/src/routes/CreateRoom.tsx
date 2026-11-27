@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import {
+  BLIND_MULTIPLIERS,
   CreateRoomResponseSchema,
   MAX_SEATS,
   MIN_SEATS,
@@ -332,6 +333,13 @@ export function CreateRoom() {
                   value={form.blindIncreaseMinutes}
                   error={errors.blindIncreaseMinutes}
                   onChange={(blindIncreaseMinutes) => update({ blindIncreaseMinutes })}
+                />
+                <p className="mt-3 mb-1 text-sm text-cream/75">Blinds go up by</p>
+                <Segmented
+                  name="blindIncreaseMultiplier"
+                  value={form.blindIncreaseMultiplier}
+                  options={BLIND_MULTIPLIERS.map((m) => ({ value: m, label: `${m}x` }))}
+                  onChange={(blindIncreaseMultiplier) => update({ blindIncreaseMultiplier })}
                 />
               </div>
             )}

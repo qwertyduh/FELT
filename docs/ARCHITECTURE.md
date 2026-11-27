@@ -131,10 +131,11 @@ Test priorities: side pots with 3+ all-ins, split pots, min-raise edge cases, he
 - Exactly one actor per active room. It holds the room state in memory and processes a **serial queue** of actions, so there are no races between two players acting at once.
 - Everything goes through the queue: player actions, host actions, join requests, top-ups, timer expiry.
 - After each accepted action, the actor persists a snapshot to Redis and then broadcasts to the room's sockets.
-- It owns all timers (turn timer, join-request expiry, disconnect grace, blind increases, idle expiry). Timer expiry is just another queued action.
+- It owns all timers (turn timer, join-request expiry, disconnect grace, idle expiry). Timer expiry is just another queued action.
 
 ### Room state (beyond the engine's HandState)
-- `settings`: mode, minBuyIn, maxBuyIn?, blinds, maxSeats, timer, blindIncrease
+- `settings`: mode, minBuyIn, maxBuyIn?, blinds, maxSeats, timer, blindIncrease (minutes or off, multiplier)
+- `blindClock`: absolute deadline of the next blind increase (frozen while paused). It needs no timer: the next hand dealt after it takes one level (rounded up, capped at the chip maximum) and starts a full countdown
 - `hostId`
 - `admitted`: set of userIds allowed in this session
 - `joinRequests`: `{ requestId, userId, username, expiresAt }[]`
@@ -247,7 +248,8 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | `host:admit` | `{ requestId, approve }` | Host |
 | `host:topup` | `{ requestId, approve }` | Host |
 | `host:start` / `host:pause` / `host:resume` / `host:end` | — | Host. While paused, moves, deals, awards, disputes, undo, stack fixes and start are refused (`room_paused`); resume restarts any waiting deadline in full. End cancels a running hand (everyone gets back what they put in) and drops all requests and queued top-ups |
-| `host:settings` | `{ smallBlind, bigBlind }` (applied next hand) | Host |
+| `host:settings` | `{ smallBlind, bigBlind }` (applied next hand; restarts the blind increase countdown) | Host |
+| `host:blind_increase` | `{ minutes, multiplier }` (`minutes` 1–240 or null = off; multiplier 1.5 or 2) | Host |
 | `host:kick` | `{ userId }`. Does what `room:leave` does, then removes admission | Host |
 | `host:transfer` | `{ userId }` (seated and connected) | Host |
 | `host:mute` | `{ userId, muted }` | Host |

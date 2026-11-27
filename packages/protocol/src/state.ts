@@ -193,8 +193,18 @@ export const PublicRoomStateSchema = z
       .object({ smallBlind: TableChipsSchema, bigBlind: TableChipsSchema })
       .strict()
       .optional(),
-    /** Absolute epoch ms of the next blind increase; null when off. */
+    /**
+     * Absolute epoch ms from which the next dealt hand takes the next blind level (it may be in
+     * the past: a hand is still running). Null when off, before the first hand, paused or ended.
+     */
     nextBlindIncreaseAt: EpochMsSchema.nullable(),
+    /** Only while paused: the time the countdown will resume with. */
+    blindIncreaseLeftMs: z.number().int().min(0).optional(),
+    /** The blinds that increase will bring; absent when no countdown is running or frozen. */
+    nextBlindLevel: z
+      .object({ smallBlind: TableChipsSchema, bigBlind: TableChipsSchema })
+      .strict()
+      .optional(),
     paused: z.boolean(),
     /** Oldest first, the last `ROOM_LOG_LIMIT` entries. */
     log: z.array(RoomLogEntrySchema).max(ROOM_LOG_LIMIT),

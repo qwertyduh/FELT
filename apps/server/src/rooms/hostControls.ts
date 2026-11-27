@@ -7,10 +7,12 @@
 import {
   AWARD_CONFIRM_MS,
   DEFAULT_SEAT_HOLD_MINUTES,
+  type BlindIncreasePatch,
   type ErrorCode,
   type HostSettingsPatch,
 } from '@felt/protocol';
 import { heldAgain } from './absence';
+import { freezeClock, restartClock, thawClock } from './blinds';
 import { leave, NEXT_HAND_DELAY_MS, running } from './game';
 import type { GameHand } from './gameSchema';
 import type { RoomRecord } from './roomStore';
@@ -41,16 +43,16 @@ function gate(room: Readonly<RoomRecord>, userId: string): SeatResult | null {
  * stack correction and start is refused with `room_paused`. Seats, join requests, top-ups and the
  * other host controls go on working.
  */
-export function pause(room: Readonly<RoomRecord>, userId: string): SeatResult {
+export function pause(room: Readonly<RoomRecord>, userId: string, now: number): SeatResult {
   const gated = gate(room, userId);
   if (gated) return gated;
   if (room.status === 'paused') return done(room);
   if (room.status !== 'playing') return refuse(room, 'illegal_action', 'the game has not started');
-  return done({ ...room, status: 'paused' });
+  return done({ ...freezeClock(room, now), status: 'paused' });
 }
 
 /**
- * `host:resume`. A waiting deadline starts again in full from now, so nobody loses part of their
+ * `host:resume`. The blind countdown goes on with what was left. A waiting deadline starts again in full from now, so nobody loses part of their
  * time to dispute, and a deadline that passed during the pause does not fire at once.
  */
 export function resume(room: Readonly<RoomRecord>, userId: string, now: number): SeatResult {
@@ -58,7 +60,11 @@ export function resume(room: Readonly<RoomRecord>, userId: string, now: number):
   if (gated) return gated;
   if (room.status === 'playing') return done(room);
   if (room.status !== 'paused') return refuse(room, 'illegal_action', 'the game is not paused');
-  const next: RoomRecord = { ...room, status: 'playing', ...heldAgain(room, now) };
+  const next: RoomRecord = {
+    ...thawClock(room, now),
+    status: 'playing',
+    ...heldAgain(room, now),
+  };
   const { game } = room;
   if (!game) return done(next);
   const proposal = game.hand?.proposal;
@@ -159,26 +165,63 @@ export function transfer(
 
 /**
  * `host:settings` (blinds only). A running hand keeps its blinds and the change waits for the next
- * deal; with no hand running it applies now, which is before the next hand too.
+ * deal; with no hand running it applies now, which is before the next hand too. A change restarts
+ * the blind increase countdown.
  */
 export function changeBlinds(
   room: Readonly<RoomRecord>,
   userId: string,
-  { smallBlind, bigBlind }: HostSettingsPatch,
+  patch: HostSettingsPatch,
+  now: number,
 ): SeatResult {
   const gated = gate(room, userId);
   if (gated) return gated;
+  const set = setBlinds(room, patch);
+  return done(set === room ? room : restartClock(set, now));
+}
+
+/**
+ * `host:blind_increase`: turn the automatic schedule on or off, or change it. A new interval (or
+ * turning it on) starts a full countdown; a new multiplier alone leaves the countdown running.
+ * Blinds only ever move when a hand is dealt.
+ */
+export function changeBlindIncrease(
+  room: Readonly<RoomRecord>,
+  userId: string,
+  { minutes, multiplier }: BlindIncreasePatch,
+  now: number,
+): SeatResult {
+  const gated = gate(room, userId);
+  if (gated) return gated;
+  const { blindIncreaseMinutes, blindIncreaseMultiplier } = room.settings;
+  if (minutes === blindIncreaseMinutes && multiplier === blindIncreaseMultiplier) {
+    return done(room);
+  }
+  const next: RoomRecord = {
+    ...room,
+    settings: {
+      ...room.settings,
+      blindIncreaseMinutes: minutes,
+      blindIncreaseMultiplier: multiplier,
+    },
+  };
+  return done(minutes === blindIncreaseMinutes ? next : restartClock(next, now));
+}
+
+/** The same room when nothing changes. */
+function setBlinds(
+  room: Readonly<RoomRecord>,
+  { smallBlind, bigBlind }: HostSettingsPatch,
+): RoomRecord {
   const { nextBlinds, ...rest } = room;
   const same = room.settings.smallBlind === smallBlind && room.settings.bigBlind === bigBlind;
   if (running(room)) {
-    if (same) return done(nextBlinds ? rest : room);
-    if (nextBlinds?.smallBlind === smallBlind && nextBlinds.bigBlind === bigBlind) {
-      return done(room);
-    }
-    return done({ ...room, nextBlinds: { smallBlind, bigBlind } });
+    if (same) return nextBlinds ? rest : room;
+    if (nextBlinds?.smallBlind === smallBlind && nextBlinds.bigBlind === bigBlind) return room;
+    return { ...room, nextBlinds: { smallBlind, bigBlind } };
   }
-  if (same && !nextBlinds) return done(room);
-  return done({ ...rest, settings: { ...room.settings, smallBlind, bigBlind } });
+  if (same && !nextBlinds) return room;
+  return { ...rest, settings: { ...room.settings, smallBlind, bigBlind } };
 }
 
 /**
@@ -204,7 +247,8 @@ function voidHand(room: Readonly<RoomRecord>, hand: GameHand, now: number): Room
 
 /**
  * `host:end`. The hand in play (if any) is cancelled, players who were leaving are cashed out, and
- * everything still waiting (join and top-up requests, queued top-ups, new blinds) is dropped.
+ * everything still waiting (join and top-up requests, queued top-ups, new blinds, the blind
+ * countdown) is dropped.
  * Seats keep their final stacks: with the ledger they are what the recap is built from.
  */
 export function end(room: Readonly<RoomRecord>, userId: string, now: number): SeatResult {
@@ -213,8 +257,9 @@ export function end(room: Readonly<RoomRecord>, userId: string, now: number): Se
   const hand = running(room);
   let next = hand ? voidHand(room, hand, now) : (room as RoomRecord);
   for (const seat of next.seats.filter((s) => s.leaving)) next = vacate(next, seat.userId, now);
-  const { nextBlinds, game, ...rest } = next;
+  const { nextBlinds, blindClock, game, ...rest } = next;
   void nextBlinds;
+  void blindClock;
   return done({
     ...rest,
     status: 'ended',

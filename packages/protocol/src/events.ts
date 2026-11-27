@@ -14,7 +14,12 @@ import {
   TurnSeqSchema,
   UserIdSchema,
 } from './common';
-import { HostSettingsPatchSchema, RoomCodeSchema, SeatHoldMinutesSchema } from './rooms';
+import {
+  BlindIncreasePatchSchema,
+  HostSettingsPatchSchema,
+  RoomCodeSchema,
+  SeatHoldMinutesSchema,
+} from './rooms';
 import { PublicRoomStateSchema } from './state';
 
 const NoPayload = z.undefined();
@@ -143,6 +148,7 @@ export const clientEventSchemas = {
   'host:resume': NoPayload,
   'host:end': NoPayload,
   'host:settings': HostSettingsPatchSchema,
+  'host:blind_increase': BlindIncreasePatchSchema,
   'host:kick': userRef,
   'host:transfer': userRef,
   'host:mute': z.object({ userId: UserIdSchema, muted: z.boolean() }).strict(),

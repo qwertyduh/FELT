@@ -4,6 +4,7 @@ import {
   MAX_BLIND_INCREASE_MINUTES,
   MAX_CHIPS,
   RoomSettingsSchema,
+  type BlindMultiplier,
   type RoomSettings,
 } from '@felt/protocol';
 import { ApiError } from './apiFetch';
@@ -29,6 +30,7 @@ export interface RoomForm {
   timerChosen: boolean;
   blindIncreaseOn: boolean;
   blindIncreaseMinutes: string;
+  blindIncreaseMultiplier: BlindMultiplier;
 }
 
 /** Hybrid is preselected: it is the mode that can be played today. */
@@ -45,6 +47,7 @@ export function initialRoomForm(mode: GameMode = 'hybrid'): RoomForm {
     timerChosen: false,
     blindIncreaseOn: d.blindIncreaseMinutes !== null,
     blindIncreaseMinutes: '',
+    blindIncreaseMultiplier: d.blindIncreaseMultiplier,
   };
 }
 
@@ -101,6 +104,7 @@ export function validateRoomForm(form: RoomForm): FormResult {
     maxSeats: form.maxSeats,
     turnTimerSeconds: form.turnTimerSeconds,
     blindIncreaseMinutes: form.blindIncreaseOn ? parseWholeNumber(form.blindIncreaseMinutes) : null,
+    blindIncreaseMultiplier: form.blindIncreaseMultiplier,
   };
   // Cross-field rules are checked here too, so they show even while another field is invalid.
   if (!errors.minBuyIn && !errors.maxBuyIn && candidate.maxBuyIn !== null) {

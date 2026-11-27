@@ -97,7 +97,7 @@ Chips exist only for the length of a game. The host sets a minimum buy-in and ap
   - Small / big blind (default 5 / 10)
   - Max seats (2–9, default 9)
   - Turn timer: off / 15 / 30 / 60s (default 30s for online, **off** for hybrid)
-  - Blind increase: off / every N minutes (default off)
+  - Blind increase: off / every N minutes (default off), multiplying the blinds by 1.5 or 2 (default 2). The host can change it from the Host menu. New blinds apply from the next hand; the countdown starts with the first hand, stops while paused and restarts when the host sets blinds by hand
 - **Join by permission (always on):**
   1. A player opens the link (`/r/FELT-7KQ2`) or types the code, and sees a room preview (host, mode, blinds, seats taken).
   2. They tap **Request to join**.

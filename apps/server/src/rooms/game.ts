@@ -29,6 +29,7 @@ import {
   type ErrorCode,
   type RoomLogEntry,
 } from '@felt/protocol';
+import { dealBlinds } from './blinds';
 import { UNDO_DEPTH, type Game, type GameHand, type UndoEntry } from './gameSchema';
 import type { RoomRecord } from './roomStore';
 import { leaveSeat, vacate, type SeatResult } from './seating';
@@ -206,18 +207,12 @@ function advanceTo(
   return state.street === 'ended' ? finishHand(next, now) : next;
 }
 
-/** Blinds the host set for the next hand, which is being dealt. */
-function applyBlinds(room: Readonly<RoomRecord>): RoomRecord {
-  const { nextBlinds, ...rest } = room;
-  return nextBlinds ? { ...rest, settings: { ...room.settings, ...nextBlinds } } : room;
-}
-
 /**
  * Deal a hand to everyone seated with chips and not sitting out. Approved top-ups are added first,
  * as part of the same change: if no hand can be dealt, they stay queued.
  */
 function deal(before: Readonly<RoomRecord>, ctx: GameContext): Result<RoomRecord> {
-  const room = applyBlinds(applyTopUps(before, ctx.now));
+  const room = dealBlinds(applyTopUps(before, ctx.now), ctx.now);
   const { maxSeats, smallBlind, bigBlind } = room.settings;
   const last = room.game?.button ?? null;
   const seats = Array.from({ length: maxSeats }, (_, i) => {

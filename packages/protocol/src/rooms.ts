@@ -36,6 +36,12 @@ export const TURN_TIMER_OPTIONS = [15, 30, 60] as const;
 /** null = timer off. */
 export const TurnTimerSchema = z.union([z.literal(15), z.literal(30), z.literal(60), z.null()]);
 export const MAX_BLIND_INCREASE_MINUTES = 240;
+export const BlindIncreaseMinutesSchema = z.number().int().min(1).max(MAX_BLIND_INCREASE_MINUTES);
+/** How much each automatic increase multiplies both blinds by. */
+export const BLIND_MULTIPLIERS = [1.5, 2] as const;
+export const DEFAULT_BLIND_MULTIPLIER = 2;
+export const BlindMultiplierSchema = z.union([z.literal(1.5), z.literal(2)]);
+export type BlindMultiplier = z.infer<typeof BlindMultiplierSchema>;
 
 const settingsShape = {
   mode: GameModeSchema,
@@ -48,7 +54,9 @@ const settingsShape = {
   /** Seconds per turn; null = off. */
   turnTimerSeconds: TurnTimerSchema,
   /** Raise blinds every N minutes; null = off. */
-  blindIncreaseMinutes: z.number().int().min(1).max(MAX_BLIND_INCREASE_MINUTES).nullable(),
+  blindIncreaseMinutes: BlindIncreaseMinutesSchema.nullable(),
+  /** Defaulted, so rooms stored before it existed still load. */
+  blindIncreaseMultiplier: BlindMultiplierSchema.default(DEFAULT_BLIND_MULTIPLIER),
 };
 
 type Rangeable = {
@@ -71,15 +79,20 @@ export const RoomSettingsSchema = z.object(settingsShape).strict().superRefine(c
 export type RoomSettings = z.infer<typeof RoomSettingsSchema>;
 
 /**
- * `host:settings`: what a host may change once the room exists. Only the blinds, and only by hand
- * (PRD 5.2; nothing specifies an automatic schedule). Both are sent, so they are checked together.
- * They apply from the next hand.
+ * `host:settings`: the blinds, set by hand. Both are sent, so they are checked together. They apply
+ * from the next hand.
  */
 export const HostSettingsPatchSchema = z
   .object({ smallBlind: settingsShape.smallBlind, bigBlind: settingsShape.bigBlind })
   .strict()
   .superRefine(checkRanges);
 export type HostSettingsPatch = z.infer<typeof HostSettingsPatchSchema>;
+
+/** `host:blind_increase`: the automatic schedule. `minutes: null` turns it off. */
+export const BlindIncreasePatchSchema = z
+  .object({ minutes: BlindIncreaseMinutesSchema.nullable(), multiplier: BlindMultiplierSchema })
+  .strict();
+export type BlindIncreasePatch = z.infer<typeof BlindIncreasePatchSchema>;
 
 /** PRD 5.2 defaults: 1000 min, no max, 5/10, 9 seats, timer 30s online / off hybrid, no increase. */
 export function defaultRoomSettings(mode: z.infer<typeof GameModeSchema>): RoomSettings {
@@ -92,6 +105,7 @@ export function defaultRoomSettings(mode: z.infer<typeof GameModeSchema>): RoomS
     maxSeats: 9,
     turnTimerSeconds: mode === 'online' ? 30 : null,
     blindIncreaseMinutes: null,
+    blindIncreaseMultiplier: DEFAULT_BLIND_MULTIPLIER,
   };
 }
 

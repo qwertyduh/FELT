@@ -5,6 +5,7 @@
  */
 import { legalActions, potsOnShow, type HandState } from '@felt/engine';
 import type { PublicHand, PublicRoomState, PublicSeat, RoomLogEntry } from '@felt/protocol';
+import { upcomingIncrease } from './blinds';
 import type { RoomRecord } from './roomStore';
 
 /** A running hand as the server holds it: the engine state plus what the engine does not track. */
@@ -147,6 +148,7 @@ export function toPublicState(
       maxSeats: s.maxSeats,
       turnTimerSeconds: s.turnTimerSeconds,
       blindIncreaseMinutes: s.blindIncreaseMinutes,
+      blindIncreaseMultiplier: s.blindIncreaseMultiplier,
     },
     hostId: room.hostId,
     ...(room.seatHoldMinutes === undefined ? {} : { seatHoldMinutes: room.seatHoldMinutes }),
@@ -162,7 +164,7 @@ export function toPublicState(
           },
         }
       : {}),
-    nextBlindIncreaseAt: null, // not scheduled yet
+    ...upcomingIncrease(room),
     paused: room.status === 'paused',
     log: (room.log ?? []).map(toPublicLogEntry),
   };

@@ -1,6 +1,6 @@
 /**
- * Host controls (P44, PRD 5.2): pause or resume, change the blinds or how long a dropped player's
- * seat is held (P45), remove a player, hand over the
+ * Host controls (P44, PRD 5.2): pause or resume, change the blinds, the automatic blind increase
+ * or how long a dropped player's seat is held (P45), remove a player, hand over the
  * room, end the game. A button in the page header (so nothing on the table moves for it) opens a
  * sheet over the bottom of the screen (`data-cover`: nothing under it takes a tap). Removing,
  * handing over and ending each take a second, named step.
@@ -14,8 +14,11 @@
 import { useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  BLIND_MULTIPLIERS,
   DEFAULT_SEAT_HOLD_MINUTES,
+  MAX_BLIND_INCREASE_MINUTES,
   MAX_CHIPS,
+  type BlindIncreasePatch,
   type ClientEventName,
   type PublicRoomState,
 } from '@felt/protocol';
@@ -39,6 +42,7 @@ const DANGER =
 type View =
   | { name: 'menu' }
   | { name: 'blinds' }
+  | { name: 'increase' }
   | { name: 'hold' }
   | { name: 'kick' | 'transfer'; userId: string }
   | {
@@ -104,6 +108,92 @@ function Blinds({
         </button>
         <button type="submit" className={`${SOLID} col-span-2`} disabled={!valid || busy}>
           Save blinds
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** The automatic schedule: off, or every N minutes times 1.5 or 2. */
+function BlindIncrease({
+  room,
+  busy,
+  onBack,
+  onSave,
+}: {
+  room: PublicRoomState;
+  busy: boolean;
+  onBack: () => void;
+  onSave: (patch: BlindIncreasePatch) => void;
+}) {
+  const { blindIncreaseMinutes, blindIncreaseMultiplier } = room.settings;
+  const [on, setOn] = useState(blindIncreaseMinutes !== null);
+  const [text, setText] = useState(() => String(blindIncreaseMinutes ?? ''));
+  const [multiplier, setMultiplier] = useState(blindIncreaseMultiplier);
+  const minutes = parseWholeNumber(text);
+  const valid = !on || (minutes >= 1 && minutes <= MAX_BLIND_INCREASE_MINUTES);
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (valid && !busy) onSave({ minutes: on ? minutes : null, multiplier });
+  };
+  const choice = (label: string, pressed: boolean, pick: () => void) => (
+    <button
+      key={label}
+      type="button"
+      aria-pressed={pressed}
+      className={pressed ? SOLID : OUTLINE}
+      onClick={pick}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <form
+      onSubmit={submit}
+      noValidate
+      aria-label="Blind increase"
+      className="flex min-h-0 flex-col gap-2 overflow-y-auto"
+    >
+      <p className="text-center text-sm text-cream/75">
+        Blinds go up on a timer, from the next hand dealt.
+      </p>
+      <div className="grid shrink-0 grid-cols-2 gap-2">
+        {choice('Off', !on, () => setOn(false))}
+        {choice('On', on, () => setOn(true))}
+      </div>
+      {on && (
+        <>
+          <label className="flex flex-col gap-1 text-center text-sm text-brass">
+            Every how many minutes?
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              className={FIELD}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
+          </label>
+          <div
+            role="group"
+            aria-label="Blinds go up by"
+            className="grid shrink-0 grid-cols-2 gap-2"
+          >
+            {BLIND_MULTIPLIERS.map((m) =>
+              choice(`${m}x`, m === multiplier, () => setMultiplier(m)),
+            )}
+          </div>
+        </>
+      )}
+      <p className="min-h-5 shrink-0 text-center text-sm text-chip-red">
+        {valid || text === '' ? '' : `Enter 1 to ${MAX_BLIND_INCREASE_MINUTES} minutes.`}
+      </p>
+      <div className="grid shrink-0 grid-cols-3 gap-2">
+        <button type="button" className={OUTLINE} onClick={onBack}>
+          Back
+        </button>
+        <button type="submit" className={`${SOLID} col-span-2`} disabled={!valid || busy}>
+          Save schedule
         </button>
       </div>
     </form>
@@ -264,9 +354,15 @@ function Sheet({
             <button type="button" className={OUTLINE} onClick={() => open({ name: 'blinds' })}>
               Change blinds
             </button>
+            <button type="button" className={OUTLINE} onClick={() => open({ name: 'increase' })}>
+              Blind timer:{' '}
+              {room.settings.blindIncreaseMinutes === null
+                ? 'off'
+                : `${room.settings.blindIncreaseMinutes}\u00a0min`}
+            </button>
             <button
               type="button"
-              className={`${OUTLINE} ${started ? 'col-span-2' : ''}`}
+              className={`${OUTLINE} ${started ? '' : 'col-span-2'}`}
               onClick={() => open({ name: 'hold' })}
             >
               Seat hold: {holdMinutes} min
@@ -321,6 +417,8 @@ function Sheet({
       )}
       {view.name === 'blinds' && (
         <Blinds
+          // Filled in again if the blinds move while it is open: never save a level gone by.
+          key={`${(room.nextBlinds ?? room.settings).smallBlind}/${(room.nextBlinds ?? room.settings).bigBlind}`}
           room={room}
           busy={busy || !ready}
           onBack={back}
@@ -328,6 +426,16 @@ function Sheet({
             void send('host:settings', () =>
               client.emitWithAck('host:settings', { smallBlind, bigBlind }),
             )
+          }
+        />
+      )}
+      {view.name === 'increase' && (
+        <BlindIncrease
+          room={room}
+          busy={busy || !ready}
+          onBack={back}
+          onSave={(patch) =>
+            void send('host:blind_increase', () => client.emitWithAck('host:blind_increase', patch))
           }
         />
       )}

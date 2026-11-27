@@ -10,6 +10,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import type { PublicRoomState, PublicSeat } from '@felt/protocol';
 import { chips, shortChips } from '../lib/seating';
 import { potName, potTotal, seatPosition, streetName, turnLine } from '../lib/table';
+import { BlindCountdown } from './BlindCountdown';
 
 /** Fixed box, positioned by `seatPosition`. */
 const SEAT =
@@ -144,10 +145,17 @@ function Player({
   );
 }
 
-/** The middle of the felt: street, total pot and, once there are side pots, each pot. */
+/** The middle of the felt: street, total pot, each side pot and the next blind level. */
 function Middle({ room }: { room: PublicRoomState }) {
   const { hand } = room;
-  if (!hand) return <p className="text-sm text-cream/75">Between hands</p>;
+  if (!hand) {
+    return (
+      <>
+        <p className="text-sm text-cream/75">Between hands</p>
+        <BlindCountdown room={room} />
+      </>
+    );
+  }
   return (
     <>
       <p className="text-sm text-cream/75">{streetName(hand.street)}</p>
@@ -166,6 +174,7 @@ function Middle({ room }: { room: PublicRoomState }) {
           ))}
         </ul>
       )}
+      <BlindCountdown room={room} />
     </>
   );
 }

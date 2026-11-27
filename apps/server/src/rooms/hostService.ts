@@ -1,5 +1,6 @@
 /**
- * Host controls (P44): `host:pause`, `host:resume`, `host:end`, `host:settings`, `host:kick`,
+ * Host controls (P44): `host:pause`, `host:resume`, `host:end`, `host:settings`,
+ * `host:blind_increase`, `host:kick`,
  * `host:transfer` and `host:seat_hold` (P45). The rules (hostControls.ts) run inside the room's actor queue. What sockets are
  * told, and which ones lose the room, follows from the committed change (`committed`).
  */
@@ -15,7 +16,16 @@ import {
 } from '../realtime/handlers';
 import { hostInbox, hostMembers } from './admission';
 import { tick, type GameContext } from './game';
-import { changeBlinds, changeSeatHold, end, kick, pause, resume, transfer } from './hostControls';
+import {
+  changeBlindIncrease,
+  changeBlinds,
+  changeSeatHold,
+  end,
+  kick,
+  pause,
+  resume,
+  transfer,
+} from './hostControls';
 import type { RoomRegistry } from './roomRegistry';
 import { RoomGoneError, type RoomRecord } from './roomStore';
 import type { SeatResult } from './seating';
@@ -55,7 +65,12 @@ export class HostService {
   }
 
   readonly register: SocketRegistrar = (socket, log) => {
-    onClientEvent(socket, 'host:pause', () => this.intent(socket, pause), log);
+    onClientEvent(
+      socket,
+      'host:pause',
+      () => this.intent(socket, (room, userId, ctx) => pause(room, userId, ctx.now)),
+      log,
+    );
     onClientEvent(
       socket,
       'host:resume',
@@ -71,7 +86,14 @@ export class HostService {
     onClientEvent(
       socket,
       'host:settings',
-      (p) => this.intent(socket, (room, userId) => changeBlinds(room, userId, p)),
+      (p) => this.intent(socket, (room, userId, ctx) => changeBlinds(room, userId, p, ctx.now)),
+      log,
+    );
+    onClientEvent(
+      socket,
+      'host:blind_increase',
+      (p) =>
+        this.intent(socket, (room, userId, ctx) => changeBlindIncrease(room, userId, p, ctx.now)),
       log,
     );
     onClientEvent(
