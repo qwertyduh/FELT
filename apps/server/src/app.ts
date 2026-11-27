@@ -245,8 +245,8 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
     await roomRegistry?.dispose();
   });
   registerAuth(app, verify); // after CORS (preflight is answered first); default-deny from here on
-  registerHealth(app, deps.redis);
   const db = deps.db !== undefined ? deps.db : createDbFromEnv(env);
+  registerHealth(app, deps.redis, { dbMissing: env.NODE_ENV === 'production' && db === null });
   if (roomRegistry && roomStore) {
     const keepAlive = new KeepAliveService({
       io: app.realtime.io,

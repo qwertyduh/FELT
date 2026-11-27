@@ -216,6 +216,7 @@ All routes require a Supabase JWT unless noted otherwise.
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/health` | Liveness + Redis status (no auth) |
+| `GET` | `/ready` | Readiness: 503 without Redis, or without the database client in production (no auth) |
 | `GET` | `/me` | `{ userId, isAnonymous, username? }` |
 | `GET` | `/usernames/check?u=` | `{ available, reason?: 'format'\|'reserved'\|'profane'\|'taken' }` (rate-limited) |
 | `POST` | `/me/username` | Claim username → `201` / `409 username_taken` / `422 { reason }` |

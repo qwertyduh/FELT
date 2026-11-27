@@ -23,7 +23,16 @@ vercel deploy --prod               # uses root vercel.json: npm ci, build apps/w
 supabase db push                   # applies supabase/migrations to the linked project (supabase link --project-ref zhggexxpffjbpunnchuk)
 ```
 
-Health check: `curl https://server-production-1b135132.up.railway.app/health` should return `redis: ok`.
+Check after a deploy: `curl -i https://server-production-1b135132.up.railway.app/ready` should return 200 with `"status":"ready"`.
+
+- `/health` is liveness: 200 whenever the process answers (`redis: ok|down` in the body).
+- `/ready` is readiness, and Railway's deploy health check (`healthcheckPath` in `railway.json`): 503 while Redis is not ready, or when there is no service-role database client in production. A deploy that never becomes ready within `healthcheckTimeout` (60 s) fails, and the previous one keeps serving. This also means no deploy can succeed while Redis is down. (A missing `SUPABASE_SERVICE_ROLE_KEY` also stops the production server at boot.) It does not test that the key or Supabase actually work.
+- Railway calls the health check only while deploying; it is not ongoing monitoring.
+
+## Rooms across a redeploy or rollback
+
+- Old and new server can overlap. A room save only succeeds over the version it was made from; the loser reloads the room and its caller gets a retryable error.
+- After a rollback, a record written by the newer server may not parse. It is left untouched (503 on preview, `internal` on socket events) and logged as `stored room record is invalid`. It becomes usable again when the newer build is redeployed, if that happens within its TTL (2 h).
 
 ## Env var names
 
