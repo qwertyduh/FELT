@@ -14,7 +14,7 @@ import {
   TurnSeqSchema,
   UserIdSchema,
 } from './common';
-import { HostSettingsPatchSchema, RoomCodeSchema } from './rooms';
+import { HostSettingsPatchSchema, RoomCodeSchema, SeatHoldMinutesSchema } from './rooms';
 import { PublicRoomStateSchema } from './state';
 
 const NoPayload = z.undefined();
@@ -58,6 +58,8 @@ export const PROTOCOL_ERROR_CODES = [
   'seat_taken',
   'already_seated',
   'not_seated',
+  /** `room:enter` with `resume`: the room has since been opened on another device. */
+  'session_moved',
   'invalid_buy_in',
   'invalid_topup',
   'stale_hand',
@@ -115,7 +117,15 @@ export const clientEventSchemas = {
   'room:request_join': z.object({ code: RoomCodeSchema }).strict(),
   /** Names the room: a user's requests elsewhere stay pending. */
   'room:cancel_request': z.object({ code: RoomCodeSchema }).strict(),
-  'room:enter': z.object({ code: RoomCodeSchema }).strict(),
+  /**
+   * `session` names this visit (one open copy of the room). The latest to enter holds the user's
+   * session and every other socket of theirs is put out (`room:displaced`). `resume` is for an
+   * automatic reconnect of a visit that was already in: it is refused as `session_moved` if another
+   * session has taken over meanwhile, so a device waking up never takes the room back by itself.
+   */
+  'room:enter': z
+    .object({ code: RoomCodeSchema, session: IdSchema.optional(), resume: z.boolean().optional() })
+    .strict(),
   /**
    * `buyIn` 0 is only for a player who left busted and is taking a seat again: they then ask the
    * host for chips with `player:topup_request`. The server refuses 0 from anyone else.
@@ -136,6 +146,14 @@ export const clientEventSchemas = {
   'host:kick': userRef,
   'host:transfer': userRef,
   'host:mute': z.object({ userId: UserIdSchema, muted: z.boolean() }).strict(),
+  /** How long a dropped player's seat is held; applies to disconnects from now on. */
+  'host:seat_hold': z.object({ minutes: SeatHoldMinutesSchema }).strict(),
+  /**
+   * With the turn timer off, fold the hand of a disconnected player whose turn it is. `handId`,
+   * `turnSeq` and `userId` all have to match, so a late or doubled tap cannot fold a later turn or
+   * another player. It cannot be undone.
+   */
+  'host:force_fold': z.object({ handId, turnSeq, userId: UserIdSchema }).strict(),
   /**
    * `street` is the street the host is advancing FROM. Without it a double tap during an all-in
    * run-out (nobody left to bet) would advance two streets. `turnSeq` is the `room:state` value
@@ -330,6 +348,11 @@ export const serverEventSchemas = {
    * is gone: coming back needs a new join request.
    */
   'room:kicked': z.object({ code: RoomCodeSchema }).strict(),
+  /**
+   * To a socket whose user has opened the room elsewhere: it is out of the room's channels. The
+   * client must stop reconnecting; entering again is the user's choice.
+   */
+  'room:displaced': z.object({ code: RoomCodeSchema }).strict(),
   'host:join_request': JoinRequestSchema,
   'host:topup_request': TopUpRequestSchema,
   'host:inbox': HostInboxSchema,

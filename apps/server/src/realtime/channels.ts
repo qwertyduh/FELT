@@ -12,3 +12,10 @@ export const roomChannel = (code: RoomCode): string => `room:${code}`;
 export const memberChannel = (code: RoomCode, userId: string): string => `member:${code}:${userId}`;
 /** A not-yet-admitted requester waiting for the decision. */
 export const joinWaitChannel = (code: RoomCode, userId: string): string => `join:${code}:${userId}`;
+
+/**
+ * Checked inside a room task before an intent is applied: the socket may have been put out of the
+ * room (opened on another device, removed) or have moved on since the intent was sent.
+ */
+export const outOfRoom = (socket: { data: { roomCode?: RoomCode } }, code: RoomCode): boolean =>
+  socket.data.roomCode !== code;

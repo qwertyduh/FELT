@@ -14,7 +14,12 @@ import {
   UndoActionSchema,
   UserIdSchema,
 } from './common';
-import { RoomCodeSchema, RoomSettingsSchema, RoomStatusSchema } from './rooms';
+import {
+  RoomCodeSchema,
+  RoomSettingsSchema,
+  RoomStatusSchema,
+  SeatHoldMinutesSchema,
+} from './rooms';
 
 /**
  * Public room state: what every ADMITTED player may see. It must never carry
@@ -144,6 +149,15 @@ export const RoomLogEntrySchema = z.discriminatedUnion('kind', [
   z
     .object({
       ...logBase,
+      /** The host folded a disconnected player's hand. */
+      kind: z.literal('force_fold'),
+      username: PublicNameSchema,
+      street: StreetSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...logBase,
       kind: z.literal('adjust'),
       username: PublicNameSchema,
       /** Signed change. */
@@ -164,6 +178,8 @@ export const PublicRoomStateSchema = z
     status: RoomStatusSchema,
     settings: RoomSettingsSchema,
     hostId: UserIdSchema,
+    /** Set once the host has changed it; absent means `DEFAULT_SEAT_HOLD_MINUTES`. */
+    seatHoldMinutes: SeatHoldMinutesSchema.optional(),
     /** Index = seat; null = empty. Length === settings.maxSeats. */
     seats: z.array(PublicSeatSchema.nullable()).min(2).max(MAX_SEATS),
     /** Seat of the button for the last/current hand; null before the first hand. */

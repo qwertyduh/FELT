@@ -6,6 +6,7 @@ import {
   RoomLogEntrySchema,
   RoomSettingsSchema,
   RoomStatusSchema,
+  SeatHoldMinutesSchema,
   type RoomCode,
   type RoomSettings,
 } from '@felt/protocol';
@@ -65,6 +66,17 @@ export const RoomRecordSchema = z
       .object({ smallBlind: PositiveChipsSchema, bigBlind: PositiveChipsSchema })
       .strict()
       .optional(),
+    /**
+     * Seated players and the host who have no socket in the room (absence.ts): when that was
+     * noticed, and until when a seat is held. Absolute epoch ms.
+     */
+    away: z
+      .record(UserId, z.object({ since: z.number().int(), releaseAt: z.number().int() }).strict())
+      .optional(),
+    /** Per user, the visit that last entered the room (`room:enter`). */
+    sessions: z.record(UserId, z.string().min(1).max(64)).optional(),
+    /** `host:seat_hold`; absent means the default. */
+    seatHoldMinutes: SeatHoldMinutesSchema.optional(),
     /** Join-denial cooldowns: userId -> epoch ms until which the user may not ask again. */
     denied: z.record(UserId, z.number().int()).optional(),
     seats: z.array(

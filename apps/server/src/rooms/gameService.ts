@@ -1,12 +1,12 @@
 /**
  * Hand lifecycle (P33): `host:start`, `game:act`, `host:advance_street`, `host:award`,
- * `host:dispute`, `host:undo`, `host:adjust_stack` (P42), the deadlines stored in the room, and `hand:result`. The rules (game.ts) run
+ * `host:dispute`, `host:undo`, `host:adjust_stack` (P42), `host:force_fold` (P45), the deadlines stored in the room, and `hand:result`. The rules (game.ts) run
  * inside the room's actor queue; this file only wires sockets and timers to them.
  */
 import { randomUUID } from 'node:crypto';
 import type { Ack, RoomCode, ServerEventPayload } from '@felt/protocol';
 import type { Realtime, Timers } from '../realtime';
-import { roomChannel } from '../realtime/channels';
+import { memberChannel, outOfRoom, roomChannel } from '../realtime/channels';
 import {
   errorAck,
   onClientEvent,
@@ -18,6 +18,7 @@ import {
   adjustStack,
   advance,
   dispute,
+  forceFold,
   nextDeadline,
   proposeAward,
   start,
@@ -127,6 +128,16 @@ export class GameService {
     );
     onClientEvent(
       socket,
+      'host:force_fold',
+      (p) =>
+        this.intent(socket, (room, userId, ctx) => {
+          const connected = this.io.sockets.adapter.rooms.has(memberChannel(room.code, p.userId));
+          return forceFold(room, userId, p, connected, ctx);
+        }),
+      log,
+    );
+    onClientEvent(
+      socket,
       'host:adjust_stack',
       (p) => this.intent(socket, (room, userId, ctx) => adjustStack(room, userId, p, ctx)),
       log,
@@ -163,6 +174,12 @@ export class GameService {
       const actor = await this.registry.get(code);
       if (!actor) return notFound();
       const refused = await actor.enqueue((room) => {
+        if (outOfRoom(socket, code)) {
+          return {
+            room,
+            result: { code: 'not_admitted' as const, message: 'enter the room first' },
+          };
+        }
         const ctx = this.context();
         // Settle anything overdue first, so an intent never beats a deadline that has passed.
         // Only for admitted users: nobody else may move the room on.

@@ -22,6 +22,8 @@ export interface SocketData {
   user: SocketUser;
   /** The room this socket entered after admission (set only by `room:enter`). */
   roomCode?: RoomCode;
+  /** The visit named by this socket's last successful `room:enter`. */
+  session?: string | undefined;
   /** Sequence of `room:enter` intents, so a slow earlier one never overrides a later one. */
   enterSeq?: number;
 }

@@ -7,6 +7,7 @@ import type { Ack, RoomCode } from '@felt/protocol';
 import type { Db } from '../db/supabase';
 import { findUsername } from '../usernames/claim';
 import type { Timers } from '../realtime';
+import { outOfRoom } from '../realtime/channels';
 import {
   errorAck,
   onClientEvent,
@@ -88,8 +89,15 @@ export class SeatService {
       if (!this.db) return errorAck('internal', 'usernames unavailable');
       const username = await findUsername(this.db, userId); // I/O stays outside the room queue
       if (username === null) return errorAck('forbidden', 'username required');
-      return this.apply(code, (room) =>
-        sit(room, { userId, username }, { seat, buyIn }, this.now()),
+      return this.apply(socket, code, (room) =>
+        // Gone during the lookup: their departure has been handled already, so a seat taken now
+        // would never be marked as away and never be released.
+        socket.connected
+          ? sit(room, { userId, username }, { seat, buyIn }, this.now())
+          : {
+              room: room as RoomRecord,
+              refused: { code: 'not_admitted', message: 'disconnected' },
+            },
       );
     });
   }
@@ -101,15 +109,21 @@ export class SeatService {
     const { userId } = socket.data.user;
     const code = socket.data.roomCode;
     if (!code) return Promise.resolve(notEntered());
-    return this.serial.run(userId, () => this.apply(code, (room) => rule(room, userId)));
+    return this.serial.run(userId, () => this.apply(socket, code, (room) => rule(room, userId)));
   }
 
   /** The actor is fetched immediately before `enqueue`, so it cannot be evicted in between. */
-  private async apply(code: RoomCode, rule: Rule): Promise<Ack> {
+  private async apply(socket: FeltSocket, code: RoomCode, rule: Rule): Promise<Ack> {
     try {
       const actor = await this.registry.get(code);
       if (!actor) return notFound();
       const refused = await actor.enqueue((room) => {
+        if (outOfRoom(socket, code)) {
+          return {
+            room,
+            result: { code: 'not_admitted' as const, message: 'enter the room first' },
+          };
+        }
         const r = rule(room);
         return { room: r.room, result: r.refused };
       });

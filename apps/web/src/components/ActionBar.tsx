@@ -6,7 +6,9 @@
  * request cards never move; they take no taps while covered.
  *
  * In hybrid the host's bar has one more line, always there, with Undo and Fix stack (P42). While
- * the game is paused (P44) nothing can be done here; the host's button row holds Resume.
+ * the game is paused (P44) nothing can be done here; the host's button row holds Resume. With the
+ * turn timer off, the host's button row offers to fold a disconnected player on turn (P45), behind
+ * a sheet that names them.
  *
  * Money safety: a button takes no taps until it has been in place for `ACTION_ARM_MS` (new on
  * every change to the hand, and after a sheet opens or closes), a tap must begin on it, and every
@@ -34,13 +36,14 @@ import { OUTLINE, SHEET, SOLID, type Tap } from '../lib/actionUi';
 import { DEALS, hostStep } from '../lib/hybrid';
 import type { AckResult, SocketClient } from '../lib/realtime/socketClient';
 import { chips, shortChips } from '../lib/seating';
-import { potTotal, toCall } from '../lib/table';
+import { absentActor, potTotal, toCall } from '../lib/table';
 import { usePressGuard } from '../lib/usePressGuard';
 import { useStillCards } from '../lib/useStillCards';
 import { AdjustSheet } from './hybrid/AdjustSheet';
 import { AwardBanner } from './hybrid/AwardBanner';
 import { AwardSheet } from './hybrid/AwardSheet';
 import { CardSheet } from './hybrid/CardSheet';
+import { ForceFoldSheet } from './ForceFoldSheet';
 import { UndoSheet } from './hybrid/UndoSheet';
 
 export const ACTION_ARM_MS = 400;
@@ -50,7 +53,7 @@ const money = (n: number) => shortChips(n, 100_000_000);
 const TOOL =
   'min-h-11 w-18 shrink-0 rounded-xl border border-felt-700 text-sm font-semibold text-brass active:brightness-90 disabled:text-cream/30';
 
-type SheetKind = 'size' | 'cards' | 'award' | 'undo' | 'adjust';
+type SheetKind = 'size' | 'cards' | 'award' | 'undo' | 'adjust' | 'absent';
 
 function SizeSheet({
   raise,
@@ -203,8 +206,11 @@ export function ActionBar({
   const keyOf = (kind: SheetKind) =>
     kind === 'award' ? awardKey : kind === 'adjust' ? 'adjust' : turnKey;
   const opened = sheet && sheet.key === keyOf(sheet.kind) ? sheet.kind : null;
-  // Forgotten, not just hidden: pots can come round to the same again after an undo.
-  if (sheet && opened === null) setSheet(null);
+  /** The disconnected player on turn, whom the host may fold. */
+  const absent = absentActor(room, userId);
+  // Forgotten, not just hidden: pots can come round to the same again after an undo. The same for
+  // a fold sheet whose player has come back: it must not reappear if they drop again.
+  if (sheet && (opened === null || (opened === 'absent' && !absent))) setSheet(null);
   const show = (kind: SheetKind) => setSheet({ kind, key: keyOf(kind) });
   const close = () => setSheet(null);
   /** The state of the hand whose disputed result was put aside to see the table. */
@@ -241,7 +247,12 @@ export function ActionBar({
   // A sheet's buttons are armed by the same check, also when nothing else is up.
   const resumable = hosting && room.status === 'paused';
   const active =
-    turn !== null || step !== null || Boolean(proposed) || opened !== null || resumable;
+    turn !== null ||
+    step !== null ||
+    Boolean(proposed) ||
+    opened !== null ||
+    resumable ||
+    absent !== null;
   const { list, held, isStill } = useStillCards<HTMLElement>(active, ACTION_ARM_MS);
   const guard = usePressGuard();
 
@@ -314,7 +325,9 @@ export function ActionBar({
   const adjusting = tools && live && opened === 'adjust';
   const banner = proposed && !minimised && !picking && !undoing && !adjusting;
   /** A sheet is up: it says the refusal, so it is not said twice. */
-  const covered = sizing || (deal !== null && opened === 'cards') || picking || undoing || banner;
+  const folding = absent !== null && opened === 'absent';
+  const covered =
+    sizing || (deal !== null && opened === 'cards') || picking || undoing || banner || folding;
 
   function dealStreet(cards?: CardString[]) {
     if (!hand || step?.kind !== 'deal') return;
@@ -390,6 +403,33 @@ export function ActionBar({
             'resume',
           )}
         </div>
+      )}
+      {absent && !folding && (
+        <div className="grid">
+          <button
+            key={`absent:${turnKey}:${absent.userId}`}
+            type="button"
+            className={`${OUTLINE} w-full`}
+            {...tap(`absent:${turnKey}:${absent.userId}`, () => show('absent'))}
+          >
+            <span className="block w-full truncate">Fold {absent.username}</span>
+            <span className="text-sm">They&apos;re away</span>
+          </button>
+        </div>
+      )}
+      {folding && hand && (
+        <ForceFoldSheet
+          key={`${turnKey}:${absent.userId}`}
+          username={absent.username}
+          id={`fold-away:${turnKey}:${absent.userId}`}
+          tap={tap}
+          notice={sheetAlert}
+          onBack={close}
+          onFold={() => {
+            const payload = { handId: hand.handId, turnSeq: hand.turnSeq, userId: absent.userId };
+            void send('host:force_fold', () => client.emitWithAck('host:force_fold', payload));
+          }}
+        />
       )}
       {turn && !sizing && (
         <div className="grid grid-cols-3 gap-2">

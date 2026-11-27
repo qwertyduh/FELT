@@ -96,6 +96,10 @@ export function liveHandOf(room: Readonly<RoomRecord>): LiveHand | null {
 
 function toPublicLogEntry(e: RoomLogEntry): RoomLogEntry {
   const { id, at } = e;
+  if (e.kind === 'force_fold') {
+    const { username, street } = e;
+    return { id, at, kind: 'force_fold', username, street };
+  }
   if (e.kind === 'undo') {
     const { action, username, street } = e;
     return { id, at, kind: 'undo', action, username, street };
@@ -145,6 +149,7 @@ export function toPublicState(
       blindIncreaseMinutes: s.blindIncreaseMinutes,
     },
     hostId: room.hostId,
+    ...(room.seatHoldMinutes === undefined ? {} : { seatHoldMinutes: room.seatHoldMinutes }),
     seats,
     button: hand?.state.button ?? room.game?.button ?? null,
     hand: hand ? toPublicHand(hand) : null,

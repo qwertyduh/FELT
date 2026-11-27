@@ -4,7 +4,13 @@
  * unchanged room is returned as the same object. None of them is a step of the hand, so
  * `host:undo` never reverses one.
  */
-import { AWARD_CONFIRM_MS, type ErrorCode, type HostSettingsPatch } from '@felt/protocol';
+import {
+  AWARD_CONFIRM_MS,
+  DEFAULT_SEAT_HOLD_MINUTES,
+  type ErrorCode,
+  type HostSettingsPatch,
+} from '@felt/protocol';
+import { heldAgain } from './absence';
 import { leave, NEXT_HAND_DELAY_MS, running } from './game';
 import type { GameHand } from './gameSchema';
 import type { RoomRecord } from './roomStore';
@@ -52,7 +58,7 @@ export function resume(room: Readonly<RoomRecord>, userId: string, now: number):
   if (gated) return gated;
   if (room.status === 'playing') return done(room);
   if (room.status !== 'paused') return refuse(room, 'illegal_action', 'the game is not paused');
-  const next: RoomRecord = { ...room, status: 'playing' };
+  const next: RoomRecord = { ...room, status: 'playing', ...heldAgain(room, now) };
   const { game } = room;
   if (!game) return done(next);
   const proposal = game.hand?.proposal;
@@ -67,6 +73,21 @@ export function resume(room: Readonly<RoomRecord>, userId: string, now: number):
           : game.hand,
     },
   });
+}
+
+/**
+ * `host:seat_hold`: how long a dropped player's seat is held. Seats already being held keep the
+ * deadline they were given.
+ */
+export function changeSeatHold(
+  room: Readonly<RoomRecord>,
+  userId: string,
+  minutes: number,
+): SeatResult {
+  const gated = gate(room, userId);
+  if (gated) return gated;
+  if ((room.seatHoldMinutes ?? DEFAULT_SEAT_HOLD_MINUTES) === minutes) return done(room);
+  return done({ ...room, seatHoldMinutes: minutes });
 }
 
 /**
@@ -97,6 +118,10 @@ export function kick(
     next = { ...next, game: { ...next.game!, hand: { ...hand, undo: [] } } };
   }
   next = dropTopUps(next, targetId);
+  const { [targetId]: session, ...sessions } = next.sessions ?? {};
+  if (session !== undefined) next = { ...next, sessions };
+  const { [targetId]: mark, ...away } = next.away ?? {};
+  if (mark !== undefined) next = { ...next, away };
   return done({
     ...next,
     admitted: next.admitted.filter((id) => id !== targetId),

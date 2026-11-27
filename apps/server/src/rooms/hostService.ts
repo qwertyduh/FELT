@@ -1,12 +1,12 @@
 /**
- * Host controls (P44): `host:pause`, `host:resume`, `host:end`, `host:settings`, `host:kick` and
- * `host:transfer`. The rules (hostControls.ts) run inside the room's actor queue. What sockets are
+ * Host controls (P44): `host:pause`, `host:resume`, `host:end`, `host:settings`, `host:kick`,
+ * `host:transfer` and `host:seat_hold` (P45). The rules (hostControls.ts) run inside the room's actor queue. What sockets are
  * told, and which ones lose the room, follows from the committed change (`committed`).
  */
 import { randomUUID } from 'node:crypto';
 import type { Ack, RoomCode } from '@felt/protocol';
 import type { Realtime, Timers } from '../realtime';
-import { joinWaitChannel, memberChannel, roomChannel } from '../realtime/channels';
+import { joinWaitChannel, memberChannel, outOfRoom, roomChannel } from '../realtime/channels';
 import {
   errorAck,
   onClientEvent,
@@ -15,7 +15,7 @@ import {
 } from '../realtime/handlers';
 import { hostInbox, hostMembers } from './admission';
 import { tick, type GameContext } from './game';
-import { changeBlinds, end, kick, pause, resume, transfer } from './hostControls';
+import { changeBlinds, changeSeatHold, end, kick, pause, resume, transfer } from './hostControls';
 import type { RoomRegistry } from './roomRegistry';
 import { RoomGoneError, type RoomRecord } from './roomStore';
 import type { SeatResult } from './seating';
@@ -72,6 +72,12 @@ export class HostService {
       socket,
       'host:settings',
       (p) => this.intent(socket, (room, userId) => changeBlinds(room, userId, p)),
+      log,
+    );
+    onClientEvent(
+      socket,
+      'host:seat_hold',
+      (p) => this.intent(socket, (room, userId) => changeSeatHold(room, userId, p.minutes)),
       log,
     );
     onClientEvent(
@@ -168,6 +174,12 @@ export class HostService {
       if (!actor) return errorAck('not_found', 'room not found');
       const refused = await actor.enqueue(
         (room) => {
+          if (outOfRoom(socket, code)) {
+            return {
+              room,
+              result: { code: 'not_admitted' as const, message: 'enter the room first' },
+            };
+          }
           const ctx = { now: this.now(), newId: this.newId };
           // Only for the host: nobody else may move the room on.
           const settled =

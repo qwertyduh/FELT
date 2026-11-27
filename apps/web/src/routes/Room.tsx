@@ -322,6 +322,24 @@ function Body({
     return <EnteredScreen userId={userId} online={state.ready} client={client} />;
   }
 
+  if (phase.name === 'displaced') {
+    return (
+      <Screen
+        title="Open on another device"
+        actions={
+          <>
+            <button type="button" className={PRIMARY} onClick={() => session.takeOver()}>
+              Use it here
+            </button>
+            <HomeLink />
+          </>
+        }
+      >
+        <Note>You can only be at this table on one screen at a time.</Note>
+      </Screen>
+    );
+  }
+
   const retry = (
     <button type="button" className={PRIMARY} onClick={() => session.retry()}>
       Try again
@@ -527,7 +545,8 @@ function Connected({
   client: SocketClient;
 }) {
   const state = useStore(session.store);
-  const lost = !state.connected && !['loading', 'missing', 'ended'].includes(state.phase.name);
+  const lost =
+    !state.connected && !['loading', 'missing', 'ended', 'displaced'].includes(state.phase.name);
   return (
     <>
       {lost && (

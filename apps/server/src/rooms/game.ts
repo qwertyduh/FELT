@@ -381,6 +381,47 @@ export function advance(
 }
 
 /**
+ * `host:force_fold`: with the turn timer off, the game waits on a disconnected player until the
+ * host folds for them (PRD 5.10). It must be their turn in the very state the host saw. Like a
+ * departure it empties the undo history, so it is never taken back.
+ */
+export function forceFold(
+  room: Readonly<RoomRecord>,
+  userId: string,
+  intent: ClientEventPayload<'host:force_fold'>,
+  connected: boolean,
+  ctx: GameContext,
+): GameResult {
+  const gated = hostGate(room, userId);
+  if (gated) return gated;
+  const found = current(room, intent.handId);
+  if ('refused' in found) return found.refused;
+  const { hand } = found;
+  if (intent.turnSeq !== (hand.turnSeq ?? 0)) {
+    return refuse(room, 'stale_hand', 'the table has moved on');
+  }
+  if (room.settings.turnTimerSeconds !== null) {
+    return refuse(room, 'illegal_action', 'only when the turn timer is off');
+  }
+  const player = playerOf(hand, intent.userId);
+  if (!player || player.seat !== hand.state.currentActor) {
+    return refuse(room, 'stale_hand', 'it is not their turn');
+  }
+  if (connected) return refuse(room, 'illegal_action', 'that player is connected');
+  const r = applyAction(hand.state, { type: 'fold', playerId: intent.userId });
+  if (!r.ok) return engineRefusal(room, r.error);
+  const seat = room.seats.find((s) => s.userId === intent.userId)!;
+  return done(
+    logged(advanceTo(room, r.value.state, ctx.now), {
+      kind: 'force_fold',
+      at: ctx.now,
+      username: seat.username,
+      street: hand.state.street,
+    }),
+  );
+}
+
+/**
  * `host:undo` (hybrid): take back the last move or deal of the running hand. `turnSeq` goes up,
  * never back, so nothing sent for an earlier state can land. A pending award must be stopped
  * (disputed) first; a disputed one is dropped. A hand that has ended cannot be undone.

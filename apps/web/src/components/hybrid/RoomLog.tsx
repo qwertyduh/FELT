@@ -1,5 +1,5 @@
 /**
- * The room log (P42): every undo and stack correction, for everyone at the table. Opened over the
+ * The room log (P42): every undo, stack correction and forced fold (P45), for everyone at the table. Opened over the
  * screen (marked `data-cover`, so nothing under it takes a tap), so it moves nothing.
  */
 import { useState } from 'react';
@@ -34,7 +34,7 @@ export function RoomLog({ log }: { log: PublicRoomState['log'] }) {
             <h2 className="text-center text-lg font-semibold text-cream">Room log</h2>
             {log.length === 0 ? (
               <p className="text-center text-base text-cream/75">
-                Nothing yet. Undos and stack corrections show here.
+                Nothing yet. Undos, stack corrections and forced folds show here.
               </p>
             ) : (
               <ol className="flex min-h-0 flex-col gap-2 overflow-y-auto">

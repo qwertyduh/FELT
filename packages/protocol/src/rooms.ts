@@ -23,6 +23,14 @@ export const JOIN_REQUEST_TTL_MS = 2 * 60_000;
 /** A denied player cannot ask again for this long. */
 export const DENY_COOLDOWN_MS = 10 * 60_000;
 
+// ---------- Disconnects (PRD 5.2, 5.10) ----------
+/** A host who has been away this long hands the room to the longest-seated connected player. */
+export const HOST_FAILOVER_MS = 2 * 60_000;
+/** How long a dropped player's seat is held. The host can change it (`host:seat_hold`). */
+export const DEFAULT_SEAT_HOLD_MINUTES = 3;
+export const MAX_SEAT_HOLD_MINUTES = 30;
+export const SeatHoldMinutesSchema = z.number().int().min(1).max(MAX_SEAT_HOLD_MINUTES);
+
 // ---------- Settings (PRD 5.2) ----------
 export const TURN_TIMER_OPTIONS = [15, 30, 60] as const;
 /** null = timer off. */

@@ -74,6 +74,9 @@ export function undoName(room: PublicRoomState, hand: PublicHand): string {
 }
 
 export function logLine(entry: RoomLogEntry): string {
+  if (entry.kind === 'force_fold') {
+    return `Host folded ${entry.username}, who was away (${streetName(entry.street).toLowerCase()})`;
+  }
   if (entry.kind === 'adjust') {
     const sign = entry.amount > 0 ? '+' : '−';
     return `Host changed ${entry.username}'s stack by ${sign}${chips(Math.abs(entry.amount))} to ${chips(entry.stack)}: ${entry.reason}`;

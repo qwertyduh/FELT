@@ -156,8 +156,12 @@ export function clearTopUpDecision(): void {
   useRoomStore.setState({ topUpDecision: null });
 }
 
+/**
+ * A reconnect. The host's lists go: the server sends them again on entry if we are still the host,
+ * and says nothing if the role moved on while we were away.
+ */
 export function markNeedsResync(): void {
-  useRoomStore.setState({ needsResync: true });
+  useRoomStore.setState({ needsResync: true, hostInbox: emptyInbox, members: [] });
 }
 
 export function resetRoom(): void {

@@ -66,6 +66,19 @@ const STREET_NAMES: Readonly<Record<PublicHand['street'], string>> = {
   showdown: 'Showdown',
   ended: 'Hand over',
 };
+/**
+ * The disconnected player this viewer may fold now (hybrid or not): they are the host, the turn
+ * timer is off and the game is waiting on that player. The server checks it all again.
+ */
+export function absentActor(room: PublicRoomState, userId: string): PublicSeat | null {
+  const { hand } = room;
+  if (room.hostId !== userId || room.status !== 'playing' || room.paused) return null;
+  if (room.settings.turnTimerSeconds !== null) return null;
+  if (!hand || hand.street === 'ended' || hand.currentActor === null) return null;
+  const seat = room.seats[hand.currentActor];
+  return seat && !seat.connected && seat.userId !== userId ? seat : null;
+}
+
 export const streetName = (street: PublicHand['street']) => STREET_NAMES[street];
 
 const NEXT_DEAL: Partial<Record<PublicHand['street'], string>> = {
@@ -84,7 +97,10 @@ export function turnLine(room: PublicRoomState, userId: string): string {
   if (hand.pendingAwards.some((a) => a.disputed)) return 'Award disputed';
   if (hand.pendingAwards.length > 0) return 'Awarding the pot';
   const actor = hand.currentActor === null ? null : room.seats[hand.currentActor];
-  if (actor) return actor.userId === userId ? 'Your turn' : `${actor.username}'s turn`;
+  if (actor) {
+    if (actor.userId === userId) return 'Your turn';
+    return actor.connected ? `${actor.username}'s turn` : `${actor.username} is away`;
+  }
   const hosting = room.hostId === userId;
   if (hand.street === 'showdown') {
     return hosting ? 'Pick the winners' : 'Waiting for the host to pick the winner';

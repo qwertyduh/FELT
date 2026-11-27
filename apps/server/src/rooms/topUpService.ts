@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Ack, RoomCode } from '@felt/protocol';
 import type { Realtime, Timers } from '../realtime';
-import { memberChannel } from '../realtime/channels';
+import { memberChannel, outOfRoom } from '../realtime/channels';
 import {
   errorAck,
   onClientEvent,
@@ -102,6 +102,12 @@ export class TopUpService {
       if (!actor) return notFound();
       const requestId = this.newId();
       const refused = await actor.enqueue((room) => {
+        if (outOfRoom(socket, code)) {
+          return {
+            room,
+            result: { code: 'not_admitted' as const, message: 'enter the room first' },
+          };
+        }
         const r = requestTopUp(room, userId, amount, requestId);
         return { room: r.room, result: r.refused };
       });
@@ -117,7 +123,13 @@ export class TopUpService {
       const actor = await this.registry.get(code);
       if (!actor) return notFound();
       const { refused, request } = await actor.enqueue((room) => {
-        const r = decideTopUp(room, userId, requestId, approve);
+        const r = outOfRoom(socket, code)
+          ? {
+              room,
+              refused: { code: 'not_admitted' as const, message: 'enter the room first' },
+              request: undefined,
+            }
+          : decideTopUp(room, userId, requestId, approve);
         return { room: r.room, result: { refused: r.refused, request: r.request } };
       });
       if (refused) return errorAck(refused.code, refused.message);

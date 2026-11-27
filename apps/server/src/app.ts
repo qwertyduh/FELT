@@ -26,6 +26,7 @@ import { SeatService } from './rooms/seatService';
 import { GameService } from './rooms/gameService';
 import { TopUpService } from './rooms/topUpService';
 import { HostService } from './rooms/hostService';
+import { PresenceService } from './rooms/presenceService';
 import { StateBroadcaster } from './rooms/broadcaster';
 import { roomChannel } from './realtime/channels';
 
@@ -191,7 +192,12 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
   const broadcaster = new StateBroadcaster(app.realtime.io, { log: app.log });
   // Room actors; null when Redis lacks the room commands (same optional pattern as the routes).
   const r = deps.redis as Partial<RoomRedis>;
-  const late: { games?: GameService; topUps?: TopUpService; hosts?: HostService } = {};
+  const late: {
+    games?: GameService;
+    topUps?: TopUpService;
+    hosts?: HostService;
+    presence?: PresenceService;
+  } = {};
   const roomRegistry: RoomRegistry | null =
     typeof r.get === 'function' && typeof r.set === 'function'
       ? new RoomRegistry(new RoomStore(r as RoomRedis), {
@@ -204,6 +210,7 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
               broadcaster.publish(room);
               late.games?.committed(room, before);
               late.topUps?.committed(room, before);
+              late.presence?.committed(room);
             },
             onCommitError: (err, room) =>
               app.log.error(
@@ -211,7 +218,10 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
                 'room commit hook failed',
               ),
           },
-          onLoad: (room) => late.games?.loaded(room),
+          onLoad: (room) => {
+            late.games?.loaded(room);
+            late.presence?.loaded(room);
+          },
         })
       : null;
   app.decorate('roomRegistry', roomRegistry);
@@ -262,6 +272,13 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
     });
     late.hosts = hosts;
     app.realtime.register(hosts.register);
+    const presence = new PresenceService({
+      io: app.realtime.io,
+      registry: roomRegistry,
+      ...(deps.roomTimers ? { timers: deps.roomTimers } : {}),
+    });
+    late.presence = presence;
+    app.addHook('onClose', async () => presence.close());
   }
   registerMe(app, db);
   await registerUsernameRoutes(app, db);

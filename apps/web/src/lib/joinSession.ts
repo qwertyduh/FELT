@@ -7,6 +7,11 @@
  * `room:request_join` again only while a request of ours has not passed its deadline, so an expired
  * request is never silently re-created. Nothing is emitted while disconnected (socket.io would
  * buffer it), and no other room event may be sent until `ready` (the `room:enter` ack).
+ *
+ * One device at a time (P45): each visit names itself in `room:enter`. A reconnect of a visit that
+ * was in asks to `resume`, which the server refuses if the room has been opened elsewhere since.
+ * Once put out (`room:displaced` or that refusal) the socket is closed and stays closed until the
+ * user asks to take the room back, so two devices never take it from each other on their own.
  */
 import {
   DENY_COOLDOWN_MS,
@@ -35,6 +40,8 @@ export type JoinPhase =
   | { name: 'entered' }
   /** The host removed us; coming back takes a new request. */
   | { name: 'kicked' }
+  /** Opened on another device, which has the room now. Nothing is retried by itself. */
+  | { name: 'displaced' }
   | { name: 'ended' }
   | { name: 'missing' };
 
@@ -64,6 +71,8 @@ export interface JoinSession {
   request(): void;
   cancel(): void;
   retry(): void;
+  /** Take the room back from the other device. */
+  takeOver(): void;
 }
 
 /** How long after our deadline we wait for the server's expiry notice before asking. */
@@ -72,6 +81,11 @@ export const RETRY_MS = 3_000;
 const MIN_COOLDOWN_MS = 5_000;
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+
+/** Only needs to differ between visits. (`randomUUID` is missing on plain-http LAN addresses.) */
+const visitId = (): string =>
+  globalThis.crypto?.randomUUID?.() ??
+  `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
 export function createJoinSession(deps: JoinSessionDeps): JoinSession {
   const { code, userId, client } = deps;
@@ -86,6 +100,9 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
   const get = () => store.getState();
   const set = (patch: Partial<JoinState>) => store.setState(patch);
 
+  const session = visitId();
+  /** This visit has been in the room: entering again is a resume, not a take-over. */
+  let wasIn = false;
   let stopped = false;
   /** Bumped on connect, disconnect and stop: answers from an older connection are ignored. */
   let epoch = 0;
@@ -135,13 +152,31 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
     if (stopped || get().phase.name !== 'pending') return;
     if (!client.socket.connected) return show({ name: 'expired' }); // a reconnect checks again
     const at = epoch;
-    const res = await client.emitWithAck('room:enter', { code });
+    const res = await sendEnter();
     if (at !== epoch || get().phase.name !== 'pending') return;
-    if (res.ok) show({ name: 'entered' });
+    if (res.ok) entered();
+    else if (res.error.code === 'session_moved') displaced();
     else if (res.error.code === 'not_admitted') show({ name: 'expired' });
     else if (res.error.code === 'room_ended') show({ name: 'ended' });
     else if (res.error.code === 'not_found') show({ name: 'missing' });
     else armExpiry(RETRY_MS);
+  }
+
+  const sendEnter = () => client.emitWithAck('room:enter', { code, session, resume: wasIn });
+
+  function entered(): void {
+    wasIn = true;
+    show({ name: 'entered' });
+  }
+
+  /** The room is open elsewhere: drop the connection and wait to be asked. */
+  function displaced(): void {
+    epoch += 1;
+    asking = false;
+    clearTimeout(retryTimer);
+    client.disconnect();
+    resetRoom();
+    show({ name: 'displaced' });
   }
 
   /** `room:enter`, single-flight per connection. */
@@ -157,11 +192,14 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
 
   async function doEnter(at: number): Promise<void> {
     if (!client.socket.connected) return;
-    const res = await client.emitWithAck('room:enter', { code });
+    const res = await sendEnter();
     if (at !== epoch) return;
-    if (res.ok) return show({ name: 'entered' });
+    if (res.ok) return entered();
     switch (res.error.code) {
+      case 'session_moved':
+        return displaced();
       case 'not_admitted':
+        wasIn = false;
         return resume();
       case 'room_ended':
         return show({ name: 'ended' });
@@ -286,9 +324,14 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
     if (p.code !== code) return;
     epoch += 1;
     asking = false;
+    wasIn = false;
     clearTimeout(retryTimer);
     resetRoom();
     show({ name: 'kicked' });
+  };
+
+  const onDisplaced = (p: ServerEventPayload<'room:displaced'>) => {
+    if (p.code === code) displaced();
   };
 
   /**
@@ -307,7 +350,7 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
     asking = false;
     set({ connected: true, ready: false, problem: null });
     const { name } = get().phase;
-    if (name !== 'ended' && name !== 'missing') void enter();
+    if (name !== 'ended' && name !== 'missing' && name !== 'displaced') void enter();
   };
 
   const onDisconnect = () => {
@@ -343,6 +386,7 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
       client.socket.on('room:join_pending', onPending);
       client.socket.on('room:join_decision', onDecision);
       client.socket.on('room:kicked', onKicked);
+      client.socket.on('room:displaced', onDisplaced);
       window.addEventListener('storage', onStorage);
       void loadPreview();
       client.connect();
@@ -358,6 +402,7 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
       client.socket.off('room:join_pending', onPending);
       client.socket.off('room:join_decision', onDecision);
       client.socket.off('room:kicked', onKicked);
+      client.socket.off('room:displaced', onDisplaced);
       window.removeEventListener('storage', onStorage);
       client.disconnect();
       resetRoom();
@@ -385,6 +430,12 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
       if (get().preview === null) void loadPreview();
       if (!client.socket.connected) client.connect();
       else void enter();
+    },
+    takeOver() {
+      if (get().phase.name !== 'displaced') return;
+      wasIn = false;
+      show({ name: 'loading' });
+      client.connect();
     },
   };
 }

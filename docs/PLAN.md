@@ -345,10 +345,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests for each control, plus a non-host attempt rejected.
 - _Note: GO on round 2 (round 1: the host could not remove an admitted player with no seat). Owner to confirm (PRD silent): ending the game during a live hand cancels it and refunds everyone, so a host losing a hand can take the bet back; kicked players may ask again with no cooldown; blinds are manual only. Gaps: no player Leave / Sit out button (no phase owns it); ended or transferred rooms still count toward the 5-room cap; host:mute unimplemented. P52: end keeps seats with final stacks and does not send session:recap._
 
-### ⬜ P45 · Reconnection & host failover
+### ✅ P45 · Reconnection & host failover
 - **Needs:** P44
 - **Do:** Seat hold for the grace period, resync on reconnect, a second device taking over the session, host auto-transfer after 2 minutes, and a turn waiting for the host to force-fold when the timer is off.
 - **Done when:** tests use fake timers for each case; Playwright kills and restores a page mid-hand.
+- _Note: GO. 3 minute default seat hold; host failover after 2 minutes to the longest-seated connected player; latest device wins. Owner to know: a hybrid room with a turn timer has no force-fold and timers arrive only with P48, so a dropped player stalls the hand until removed (P48 must cover hybrid); away players are still dealt in during the hold; force-fold cannot be undone. P46 follow-ups: vacuous queued-intent test in presence.test.ts; a take-over dropping mid-save can show Open on another device wrongly. Web and server deploy together._
 
 ### ⬜ P46 · Hybrid E2E game
 - **Needs:** P42, P43, P45

@@ -49,6 +49,8 @@ export function actFailure({ code }: ErrorPayload, event: ClientEventName = 'gam
   if (event === 'host:dispute' && (code === 'hand_ended' || code === 'stale_hand')) {
     return 'Too late: already paid.';
   }
+  // Most likely they are back (or the game's timer is on).
+  if (event === 'host:force_fold' && code === 'illegal_action') return 'Not folded. Check table.';
   switch (code as string) {
     case 'stale_hand':
     case 'not_your_turn':

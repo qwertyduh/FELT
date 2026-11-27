@@ -1,5 +1,6 @@
 /**
- * Host controls (P44, PRD 5.2): pause or resume, change the blinds, remove a player, hand over the
+ * Host controls (P44, PRD 5.2): pause or resume, change the blinds or how long a dropped player's
+ * seat is held (P45), remove a player, hand over the
  * room, end the game. A button in the page header (so nothing on the table moves for it) opens a
  * sheet over the bottom of the screen (`data-cover`: nothing under it takes a tap). Removing,
  * handing over and ending each take a second, named step.
@@ -12,7 +13,12 @@
  */
 import { useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { MAX_CHIPS, type ClientEventName, type PublicRoomState } from '@felt/protocol';
+import {
+  DEFAULT_SEAT_HOLD_MINUTES,
+  MAX_CHIPS,
+  type ClientEventName,
+  type PublicRoomState,
+} from '@felt/protocol';
 import { OUTLINE, SOLID, type Tap } from '../lib/actionUi';
 import { parseWholeNumber } from '../lib/createRoom';
 import { hostFailure, kickFate } from '../lib/hostControls';
@@ -22,6 +28,7 @@ import { usePressGuard } from '../lib/usePressGuard';
 import { useStillCards } from '../lib/useStillCards';
 
 export const HOST_ARM_MS = 400;
+const SEAT_HOLD_CHOICES = [1, 3, 5, 10] as const;
 
 const ROW = 'min-h-12 w-full shrink-0';
 const FIELD =
@@ -32,6 +39,7 @@ const DANGER =
 type View =
   | { name: 'menu' }
   | { name: 'blinds' }
+  | { name: 'hold' }
   | { name: 'kick' | 'transfer'; userId: string }
   | {
       name: 'end';
@@ -220,6 +228,7 @@ function Sheet({
   const fate = view.name === 'kick' && target ? kickFate(room, target.userId) : '';
   const started = room.status === 'playing' || room.status === 'paused';
   const paused = room.status === 'paused';
+  const holdMinutes = room.seatHoldMinutes ?? DEFAULT_SEAT_HOLD_MINUTES;
 
   return createPortal(
     <div
@@ -252,12 +261,15 @@ function Sheet({
                 {paused ? 'Resume game' : 'Pause game'}
               </button>
             )}
+            <button type="button" className={OUTLINE} onClick={() => open({ name: 'blinds' })}>
+              Change blinds
+            </button>
             <button
               type="button"
-              className={`${OUTLINE} ${started ? '' : 'col-span-2'}`}
-              onClick={() => open({ name: 'blinds' })}
+              className={`${OUTLINE} ${started ? 'col-span-2' : ''}`}
+              onClick={() => open({ name: 'hold' })}
             >
-              Change blinds
+              Seat hold: {holdMinutes} min
             </button>
           </div>
           {others.length > 0 && (
@@ -318,6 +330,35 @@ function Sheet({
             )
           }
         />
+      )}
+      {view.name === 'hold' && (
+        <div className="flex flex-col gap-2">
+          <p className="text-center text-sm text-cream/75">
+            How long a player who drops keeps their seat.
+          </p>
+          <div className="grid grid-cols-4 gap-2">
+            {SEAT_HOLD_CHOICES.map((minutes) => (
+              <button
+                key={minutes}
+                type="button"
+                aria-pressed={minutes === holdMinutes}
+                className={minutes === holdMinutes ? SOLID : OUTLINE}
+                {...tap(
+                  `hold:${minutes}`,
+                  () =>
+                    void send('host:seat_hold', () =>
+                      client.emitWithAck('host:seat_hold', { minutes }),
+                    ),
+                )}
+              >
+                {minutes} min
+              </button>
+            ))}
+          </div>
+          <button type="button" className={OUTLINE} onClick={back}>
+            Back
+          </button>
+        </div>
       )}
       {view.name === 'kick' && target && (
         <Confirm

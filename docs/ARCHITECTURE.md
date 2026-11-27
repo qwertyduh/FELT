@@ -139,6 +139,8 @@ Test priorities: side pots with 3+ all-ins, split pots, min-raise edge cases, he
 - `admitted`: set of userIds allowed in this session
 - `joinRequests`: `{ requestId, userId, username, expiresAt }[]`
 - `denied`: `userId → cooldownUntil`
+- `away`: `userId → { since, releaseAt }` for disconnected seated players and the host. At `releaseAt` the seat is given up as `room:leave` would (not while dealt into the running hand or paused). A host away 2 minutes is replaced by the longest-seated connected player
+- `sessions`: `userId → session` of the visit holding the room
 - `topUpRequests`: `{ requestId, userId, amount, createdAt }[]`
 - `pendingTopUps`: approved amounts, applied at the next hand start
 - `ledger`: append-only `{ t, userId, kind: 'buy_in'|'top_up'|'adjust'|'hand_result', amount, note? }[]`, which is the source of truth for the recap (`amount` is signed for `adjust`, whose `note` is the reason)
@@ -231,7 +233,7 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 |---|---|---|
 | `room:request_join` | `{ code }` | Anyone not yet admitted |
 | `room:cancel_request` | `{ code }` | Requester |
-| `room:enter` | `{ code }` | Admitted player (incl. on reconnect) |
+| `room:enter` | `{ code, session?, resume? }` | Admitted player (incl. on reconnect). `session` names the visit: the latest to enter holds the user's session and their other sockets get `room:displaced`. `resume` (an automatic reconnect) is refused as `session_moved` if another session has taken over |
 | `room:sit` | `{ seat, buyIn }` | Admitted player; `minBuyIn ≤ buyIn ≤ maxBuyIn`. A player returning mid-game brings exactly what they left with (0 if busted; then a top-up) |
 | `room:sit_out` / `room:sit_in` | — | Player |
 | `room:leave` | — | Player |
@@ -244,6 +246,8 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | `host:kick` | `{ userId }`. Does what `room:leave` does, then removes admission | Host |
 | `host:transfer` | `{ userId }` (seated and connected) | Host |
 | `host:mute` | `{ userId, muted }` | Host |
+| `host:seat_hold` | `{ minutes }` (1–30, default 3; applies to later disconnects) | Host |
+| `host:force_fold` | `{ handId, turnSeq, userId }`. Folds a disconnected player on turn, only with the turn timer off; cannot be undone | Host |
 | `host:advance_street` | `{ handId, turnSeq, street, cards? }` | Host, hybrid |
 | `host:award` | `{ handId, turnSeq, awards: [{ potId, winners }] }` (every pot) | Host, hybrid |
 | `host:dispute` | `{ handId }` | Any seated player or the host, during the 5s award window |
@@ -261,6 +265,7 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | `room:join_decision` | `{ approved, retryAfter?, ended? }` | Requester |
 | `room:kicked` | `{ code }` | A removed player's sockets (also on `room:enter` until they ask again) |
 | `host:members` | `{ members: [{ userId, username, seated, leaving }] }` (everyone admitted; empty to a host who handed over) | Host |
+| `room:displaced` | `{ code }` | A socket whose user opened the room elsewhere; the client stops reconnecting |
 | `host:join_request` | `{ requestId, userId, username }` | Host |
 | `host:topup_request` | `{ requestId, userId, amount }` | Host |
 | `player:topup_decision` | `{ requestId, approved, amount, reason? }` (`over_max`: dropped when due) | Requester |

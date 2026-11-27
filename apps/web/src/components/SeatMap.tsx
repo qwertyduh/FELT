@@ -4,6 +4,7 @@
  */
 import type { PublicRoomState, PublicSeat } from '@felt/protocol';
 import { chips, shortChips } from '../lib/seating';
+import { AwayMark } from './Table';
 
 /** Fixed box so nine seats never overlap on a 320px screen. */
 const SEAT =
@@ -47,15 +48,20 @@ function Taken({
         `${chips(seat.stack)} chips`,
         ...tags,
       ].join(', ')}
-      className={`${SEAT} border-2 bg-felt-950 ${me ? 'border-brass' : 'border-felt-700'} ${
-        seat.connected ? '' : 'opacity-60'
+      className={`${SEAT} border-2 bg-felt-950 ${
+        !seat.connected ? 'border-dashed border-chip-red' : me ? 'border-brass' : 'border-felt-700'
       }`}
       style={style}
     >
-      <span className={`line-clamp-2 w-full break-all ${me ? 'text-brass' : 'text-cream'}`}>
+      <span
+        className={`line-clamp-2 w-full break-all ${me ? 'text-brass' : 'text-cream'} ${
+          seat.connected ? '' : 'opacity-60'
+        }`}
+      >
         {seat.username}
       </span>
       <span className="text-cream/75 tabular-nums">{shortChips(seat.stack)}</span>
+      {!seat.connected && <AwayMark />}
     </li>
   );
 }

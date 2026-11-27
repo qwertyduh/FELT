@@ -1,11 +1,12 @@
 /**
  * Join requests and admission (P30): `room:request_join`, `room:cancel_request`, `host:admit`,
- * `room:enter` and request expiry. Every read or change of room state goes through the room's actor
+ * `room:enter` and request expiry; also who is connected (presence marks) and which of a user's
+ * devices holds the room (P45). Every read or change of room state goes through the room's actor
  * queue. Events and channel joins happen only after the new state is committed, synchronously in the
  * continuation of `enqueue`, i.e. before the room's next task can start.
  */
 import { randomUUID } from 'node:crypto';
-import type { Ack, RoomCode, ServerEventPayload } from '@felt/protocol';
+import type { Ack, ClientEventPayload, RoomCode, ServerEventPayload } from '@felt/protocol';
 import type { Db } from '../db/supabase';
 import { findUsername } from '../usernames/claim';
 import type { Realtime, Timers } from '../realtime';
@@ -15,7 +16,7 @@ import {
   type FeltSocket,
   type SocketRegistrar,
 } from '../realtime/handlers';
-import { joinWaitChannel, memberChannel, roomChannel } from '../realtime/channels';
+import { joinWaitChannel, memberChannel, outOfRoom, roomChannel } from '../realtime/channels';
 import { KeyedLimiter } from '../realtime/rateLimit';
 import {
   cancelJoin,
@@ -28,6 +29,7 @@ import {
   requestJoin,
   type JoinRecord,
 } from './admission';
+import { arrived, trackAbsence } from './absence';
 import { KeyedSerial } from './keyedSerial';
 import type { StateBroadcaster } from './broadcaster';
 import { RoomGoneError, type RoomRecord } from './roomStore';
@@ -69,6 +71,8 @@ const realTimers: Timers = {
   },
   clearTimeout: (h) => clearTimeout(h as NodeJS.Timeout),
 };
+
+type EnterIntent = ClientEventPayload<'room:enter'>;
 
 const notFound = () => errorAck('not_found', 'room not found');
 const OK: Ack = { ok: true };
@@ -120,12 +124,7 @@ export class JoinService {
       ({ code }) => this.guard(() => this.cancelRequest(socket, code)),
       log,
     );
-    onClientEvent(
-      socket,
-      'room:enter',
-      ({ code }) => this.guard(() => this.enter(socket, code)),
-      log,
-    );
+    onClientEvent(socket, 'room:enter', (p) => this.guard(() => this.enter(socket, p)), log);
     onClientEvent(
       socket,
       'host:admit',
@@ -242,6 +241,14 @@ export class JoinService {
     const out = await actor.enqueue((room) => {
       const at = this.timers.now();
       const pruned = pruneExpired(room, at);
+      if (outOfRoom(socket, code)) {
+        const outcome = {
+          kind: 'refused' as const,
+          code: 'not_admitted' as const,
+          message: 'enter the room first',
+        };
+        return { room: pruned.room, result: { outcome, expired: pruned.expired } };
+      }
       const r = decideJoin(pruned.room, userId, requestId, approve, at);
       return { room: r.room, result: { outcome: r.outcome, expired: pruned.expired } };
     });
@@ -259,19 +266,23 @@ export class JoinService {
     return OK;
   }
 
-  private async enter(socket: FeltSocket, code: RoomCode): Promise<Ack> {
+  private async enter(socket: FeltSocket, intent: EnterIntent): Promise<Ack> {
     const { userId } = socket.data.user;
     // Taken up front (parallel probes cannot all slip past), refunded unless it was a miss.
     if (!this.enterLimit.take(userId)) return errorAck('rate_limited', 'too many attempts');
     let miss = false;
     try {
-      return await this.tryEnter(socket, code, () => (miss = true));
+      return await this.tryEnter(socket, intent, () => (miss = true));
     } finally {
       if (!miss) this.enterLimit.refund(userId);
     }
   }
 
-  private async tryEnter(socket: FeltSocket, code: RoomCode, missed: () => void): Promise<Ack> {
+  private async tryEnter(
+    socket: FeltSocket,
+    { code, session, resume }: EnterIntent,
+    missed: () => void,
+  ): Promise<Ack> {
     const { userId } = socket.data.user;
     const seq = (socket.data.enterSeq ?? 0) + 1;
     socket.data.enterSeq = seq;
@@ -288,22 +299,36 @@ export class JoinService {
     }
     // Queued (even though it usually changes nothing) so the admission check and the channel join
     // cannot interleave with another change to the room.
-    const out = await actor.enqueue((room) => {
-      const pruned = pruneExpired(room, this.timers.now());
-      const next =
-        name !== null && this.unnamed(pruned.room, userId)
-          ? { ...pruned.room, names: { ...pruned.room.names, [userId]: name } }
-          : pruned.room;
-      return {
-        room: next,
-        result: {
-          expired: pruned.expired,
-          admitted: next.admitted.includes(userId),
-          ended: next.status === 'ended',
-          kicked: next.kicked?.includes(userId) ?? false,
-        },
-      };
-    });
+    // Not activity by itself (`keepTtl`), as for presence.
+    const out = await actor.enqueue(
+      (room) => {
+        const pruned = pruneExpired(room, this.timers.now());
+        let next =
+          name !== null && this.unnamed(pruned.room, userId)
+            ? { ...pruned.room, names: { ...pruned.room.names, [userId]: name } }
+            : pruned.room;
+        const admitted = next.admitted.includes(userId);
+        const ended = next.status === 'ended';
+        let moved = false;
+        // Only an enter that will go through may take the session or settle the absence.
+        if (admitted && !ended && socket.connected && socket.data.enterSeq === seq) {
+          const holder = next.sessions?.[userId];
+          moved = resume === true && holder !== undefined && holder !== session;
+          if (!moved) next = arrived(next, userId, session);
+        }
+        return {
+          room: next,
+          result: {
+            expired: pruned.expired,
+            admitted,
+            ended,
+            moved,
+            kicked: next.kicked?.includes(userId) ?? false,
+          },
+        };
+      },
+      { keepTtl: true },
+    );
     const room = actor.state();
     this.afterChange(code, room, out.expired);
     if (!out.admitted) {
@@ -314,7 +339,13 @@ export class JoinService {
     }
     if (out.ended) return errorAck('room_ended', 'room has ended');
     if (socket.data.enterSeq !== seq) return errorAck('forbidden', 'superseded by a newer request');
-    if (!socket.connected) return OK;
+    if (out.moved) return errorAck('session_moved', 'this room is open on another device');
+    if (!socket.connected) {
+      // Gone while this was being saved: their absence mark may just have been cleared, and no
+      // disconnect will report it (the socket was not in the room yet).
+      this.departed(code);
+      return OK;
+    }
 
     const previous = socket.data.roomCode;
     if (previous && previous !== code) {
@@ -323,8 +354,11 @@ export class JoinService {
       this.departed(previous);
     }
     void socket.leave(joinWaitChannel(code, userId));
+    // In the same step as the commit, before the room's next task: the user's other sockets are out.
+    this.displace(socket, code, session);
     void socket.join([roomChannel(code), memberChannel(code, userId)]);
     socket.data.roomCode = code;
+    socket.data.session = session;
     if (room.hostId === userId) {
       socket.emit('host:inbox', hostInbox(room, this.timers.now()));
       socket.emit('host:members', { members: hostMembers(room) });
@@ -337,6 +371,22 @@ export class JoinService {
       this.broadcaster.sendTo(socket, actor.state());
     }
     return OK;
+  }
+
+  /** One user, one device: every other socket of theirs in the room loses it. */
+  private displace(socket: FeltSocket, code: RoomCode, session: string | undefined): void {
+    const member = memberChannel(code, socket.data.user.userId);
+    for (const id of [...(this.io.sockets.adapter.rooms.get(member) ?? [])]) {
+      const other = this.io.sockets.sockets.get(id);
+      if (!other || other.id === socket.id) continue;
+      void other.leave(roomChannel(code));
+      void other.leave(member);
+      delete other.data.roomCode;
+      // The same visit on a new connection is not "another device": nothing to tell its old one.
+      if (session === undefined || other.data.session !== session) {
+        other.emit('room:displaced', { code });
+      }
+    }
   }
 
   private unnamed(room: Readonly<RoomRecord>, userId: string): boolean {
@@ -357,10 +407,11 @@ export class JoinService {
   }
 
   /**
-   * Presence is not stored in the room, so a change of it is published by committing an unchanged
-   * copy: the version moves on and the actor's `onCommit` broadcasts. Checked inside the queue, so
-   * changes that are already covered cost nothing. Never extends the room's TTL. True if a new
-   * version went out.
+   * Who is connected: the absence marks (stored, for the seat hold and host failover) are brought
+   * up to date, and the room is told. `connected` flags are not stored, so a change of them is
+   * published by committing an unchanged copy: the version moves on and the actor's `onCommit`
+   * broadcasts. Checked inside the queue, so changes that are already covered cost nothing. Never
+   * extends the room's TTL. True if a new version went out.
    */
   private async publishPresence(code: RoomCode): Promise<boolean> {
     try {
@@ -368,8 +419,16 @@ export class JoinService {
       if (!actor) return false;
       return await actor.enqueue(
         (room) => {
-          const stale = this.broadcaster.isStale(room);
-          return { room: stale ? { ...room } : room, result: stale };
+          const { rooms } = this.io.sockets.adapter;
+          const marked = trackAbsence(
+            room,
+            (userId) => rooms.has(memberChannel(code, userId)),
+            this.timers.now(),
+          );
+          // With nobody in the room there is nobody to tell: only changed marks are written.
+          const stale = rooms.has(roomChannel(code)) && this.broadcaster.isStale(marked);
+          const changed = stale || marked !== room;
+          return { room: changed ? { ...marked } : room, result: changed };
         },
         { keepTtl: true },
       );
@@ -384,9 +443,8 @@ export class JoinService {
     if (this.closed || this.presenceTimers.has(code)) return;
     const timer = setTimeout(() => {
       this.presenceTimers.delete(code);
-      // Nobody to tell: write nothing; the next to enter gets a fresh version.
       if (!this.io.sockets.adapter.rooms.has(roomChannel(code))) this.broadcaster.forget(code);
-      else void this.publishPresence(code);
+      void this.publishPresence(code);
     }, this.presenceDebounceMs);
     timer.unref();
     this.presenceTimers.set(code, timer);

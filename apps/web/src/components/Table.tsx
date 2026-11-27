@@ -40,6 +40,19 @@ function Dealer({ inward }: { inward: 'left' | 'right' }) {
   );
 }
 
+/** On a seat whose player has dropped: stays readable whatever else the box says. */
+export function AwayMark() {
+  return (
+    <span
+      data-testid="away"
+      aria-hidden="true"
+      className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-chip-red px-1.5 text-[11px] leading-4 font-bold text-felt-950"
+    >
+      Away
+    </span>
+  );
+}
+
 function Player({
   seat,
   me,
@@ -67,7 +80,7 @@ function Player({
   const state = folded
     ? 'Folded'
     : !seat.connected
-      ? 'Away'
+      ? null
       : seat.sittingOut
         ? 'Sitting out'
         : inHand && seat.handStatus === null
@@ -88,7 +101,9 @@ function Player({
   ].filter(Boolean);
   const tone = turn
     ? 'border-cream bg-brass text-felt-950 ring-4 ring-brass/50'
-    : `bg-felt-950 text-cream ${me ? 'border-brass' : 'border-felt-700'}`;
+    : `bg-felt-950 text-cream ${
+        !seat.connected ? 'border-dashed border-chip-red' : me ? 'border-brass' : 'border-felt-700'
+      }`;
   return (
     <li
       data-testid={`seat-${seat.seat}`}
@@ -123,6 +138,7 @@ function Player({
           <span className="h-[1lh] whitespace-nowrap">{state}</span>
         )}
       </span>
+      {!seat.connected && <AwayMark />}
       {dealer && <Dealer inward={inward} />}
     </li>
   );
