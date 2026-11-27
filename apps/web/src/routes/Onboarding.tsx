@@ -7,6 +7,7 @@ import {
   USERNAME_MIN,
 } from '@felt/protocol';
 import { AppealDialog } from '../components/AppealDialog';
+import { SOCIAL_HANDLE } from '../config';
 import { apiFetch } from '../lib/api';
 import { useAuthStore } from '../lib/authStore';
 import { loadMe, setClaimedUsername } from '../lib/meStore';
@@ -31,7 +32,8 @@ const TONE_GLYPH: Record<Tone, string> = { hint: '', pending: '…', ok: '✓', 
 
 function verdictFeedback(v: Verdict): Feedback {
   if (v.kind === 'rejected') {
-    return { tone: 'bad', text: v.message, appeal: v.reason === 'profane' };
+    const appeal = SOCIAL_HANDLE !== null && v.reason === 'profane';
+    return { tone: 'bad', text: v.message, appeal };
   }
   if (v.kind === 'error') return { tone: 'bad', text: v.message };
   return { tone: 'pending', text: 'You already have a username. Taking you home…' };
@@ -97,7 +99,9 @@ export function Onboarding() {
         return;
       }
       setClaimVerdict({ name, verdict });
-      if (verdict.kind === 'rejected' && verdict.reason === 'profane') setAppealOpen(true);
+      if (SOCIAL_HANDLE !== null && verdict.kind === 'rejected' && verdict.reason === 'profane') {
+        setAppealOpen(true);
+      }
       setSubmitting(false);
     }
   }
