@@ -16,7 +16,10 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "e2e": "playwright test -c apps/web/playwright.config.ts"
+    "e2e": "playwright test -c apps/web/playwright.config.ts",
+    "sandbox:up": "node scripts/sandbox.mjs up",
+    "sandbox:down": "node scripts/sandbox.mjs down",
+    "sandbox:logs": "node scripts/sandbox.mjs logs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

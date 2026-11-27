@@ -33,9 +33,10 @@ export function createDbClient(url: string, serviceRoleKey: string): Db {
 /** `null` when no key is configured (development / test); the username routes then answer 503. */
 export function createDbFromEnv(env: {
   SUPABASE_URL: string;
+  SUPABASE_API_URL?: string | undefined;
   SUPABASE_SERVICE_ROLE_KEY?: string | undefined;
 }): Db | null {
   return env.SUPABASE_SERVICE_ROLE_KEY
-    ? createDbClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
+    ? createDbClient(env.SUPABASE_API_URL ?? env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
     : null;
 }

@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+/** Hosts that can only be this machine, as seen from the host or from inside Docker. */
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', 'host.docker.internal']);
+const isLocalUrl = (url: string): boolean => LOCAL_HOSTS.has(new URL(url).hostname);
+
 const originList = z
   .string({ error: 'is required (comma-separated list of allowed origins)' })
   .transform((raw) =>
@@ -60,6 +64,17 @@ export const envSchema = z
     SUPABASE_URL: httpUrl,
     /** Optional override; defaults to `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`. */
     SUPABASE_JWKS_URL: httpUrl.optional(),
+    /**
+     * Where the server reaches Supabase for database calls, when that differs from `SUPABASE_URL`
+     * (which stays the token issuer). Defaults to `SUPABASE_URL`.
+     */
+    SUPABASE_API_URL: httpUrl.optional(),
+    /**
+     * Local Docker sandbox only (`npm run sandbox:up`): lets a production build use the local
+     * Supabase stack over plain http, and refuses to boot if any Supabase URL is not local.
+     * Never set it on a deployment.
+     */
+    LOCAL_SANDBOX: z.enum(['true', 'false']).optional(),
     /** Server-only secret. Required in production; without it the username routes answer 503. */
     SUPABASE_SERVICE_ROLE_KEY: z.string().trim().min(1).optional(),
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -112,11 +127,27 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
     TRUST_PROXY: result.data.TRUST_PROXY ?? result.data.NODE_ENV === 'production',
   };
   const jwksUrl = data.SUPABASE_JWKS_URL ?? `${data.SUPABASE_URL}/auth/v1/.well-known/jwks.json`;
-  // Signing keys fetched over plain http could be swapped by a network attacker.
-  if (data.NODE_ENV === 'production' && !jwksUrl.startsWith('https://')) {
-    throw new Error(
-      'Invalid environment configuration:\n  - SUPABASE_JWKS_URL: must be https in production',
-    );
+  const invalid = (line: string) => new Error(`Invalid environment configuration:\n  - ${line}`);
+  if (data.LOCAL_SANDBOX === 'true') {
+    const urls = {
+      SUPABASE_URL: data.SUPABASE_URL,
+      SUPABASE_API_URL: data.SUPABASE_API_URL,
+      SUPABASE_JWKS_URL: jwksUrl,
+    };
+    for (const [name, url] of Object.entries(urls)) {
+      if (url !== undefined && !isLocalUrl(url)) {
+        throw invalid(`${name}: must be a local address when LOCAL_SANDBOX=true`);
+      }
+    }
+  } else if (data.NODE_ENV === 'production') {
+    // Signing keys fetched over plain http could be swapped by a network attacker.
+    if (!jwksUrl.startsWith('https://')) {
+      throw invalid('SUPABASE_JWKS_URL: must be https in production');
+    }
+    // Database calls carry the service-role key.
+    if (data.SUPABASE_API_URL && !data.SUPABASE_API_URL.startsWith('https://')) {
+      throw invalid('SUPABASE_API_URL: must be https in production');
+    }
   }
   return { ...data, SUPABASE_JWKS_URL: jwksUrl };
 }

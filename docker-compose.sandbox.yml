@@ -1,0 +1,43 @@
+# Production server image + its own Redis, against the LOCAL Supabase stack.
+# Run it with `npm run sandbox:up` / `sandbox:down` (docs/DEPLOY.md), not by hand: the script
+# generates apps/server/.env.sandbox and keeps the root .env out of Compose.
+# A separate project, so it never touches the dev Redis from docker-compose.yml.
+name: felt-sandbox
+
+services:
+  redis:
+    image: redis:7-alpine
+    # No host port: only the server needs it.
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      # Generated, gitignored. Not required here so that `down` works without it.
+      - path: apps/server/.env.sandbox
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      REDIS_URL: redis://redis:6379
+      # No proxy in front, so X-Forwarded-For is not to be believed.
+      TRUST_PROXY: 'false'
+    ports:
+      # This machine only. The variable is set by scripts/sandbox.mjs.
+      - '127.0.0.1:${SANDBOX_PORT:-3001}:3000'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway' # built in on Docker Desktop; needed on Linux
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:3000/ready']
+      interval: 2s
+      timeout: 3s
+      retries: 20

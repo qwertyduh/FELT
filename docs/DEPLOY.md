@@ -34,9 +34,27 @@ Check after a deploy: `curl -i https://server-production-1b135132.up.railway.app
 - Old and new server can overlap. A room save only succeeds over the version it was made from; the loser reloads the room and its caller gets a retryable error.
 - After a rollback, a record written by the newer server may not parse. It is left untouched (503 on preview, `internal` on socket events) and logged as `stored room record is invalid`. It becomes usable again when the newer build is redeployed, if that happens within its TTL (2 h).
 
+## Local sandbox (production image, local Supabase)
+
+Runs the Docker-built server with its own Redis against the local Supabase stack. Nothing here touches production.
+
+```bash
+supabase start
+# stop any dev server on 3001 first: Ctrl+C, or kill $(lsof -ti tcp:3001 -sTCP:LISTEN)
+npm run sandbox:up      # builds, starts, waits for /ready (http://localhost:3001); rerun after code changes
+npm run sandbox:logs
+npm run sandbox:down    # stops it and discards its rooms
+```
+
+- Keys come from `supabase status` into `apps/server/.env.sandbox` (gitignored). The root `.env` is not used, and the script refuses a non-local Supabase URL.
+- `SANDBOX_PORT` and `SANDBOX_WEB_ORIGIN` (default `http://localhost:5173,http://localhost:4173`) override the defaults. Redis has no host port, so the dev Redis is unaffected.
+- Web app: run `npm run env:local -w apps/web` once (points at `127.0.0.1:3001`), then `npm run dev -w apps/web`.
+- Playwright: with the sandbox up, `REDIS_CONTAINER=felt-sandbox-redis-1 npm run e2e`. It reuses the server already on 3001, so check that `sandbox:up` succeeded; with nothing on 3001 it starts a dev server instead. Specs assume port 3001.
+- Local Supabase allows 30 anonymous sign-ins per hour per IP (`[auth.rate_limit]` in `supabase/config.toml`); long browser runs can hit it.
+
 ## Env var names
 
-- **Railway `server`:** `NODE_ENV=production`, `HOST=0.0.0.0`, `LOG_LEVEL=info`, `PORT` (injected by Railway), `REDIS_URL` (reference `${{Redis.REDIS_URL}}`), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (secret), `WEB_ORIGIN` (comma-separated exact origins, no trailing slash), `RAILWAY_DOCKERFILE_PATH=apps/server/Dockerfile`. Optional: `TRUST_PROXY` (defaults to true in production, false elsewhere), `SUPABASE_JWKS_URL`.
+- **Railway `server`:** `NODE_ENV=production`, `HOST=0.0.0.0`, `LOG_LEVEL=info`, `PORT` (injected by Railway), `REDIS_URL` (reference `${{Redis.REDIS_URL}}`), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (secret), `WEB_ORIGIN` (comma-separated exact origins, no trailing slash), `RAILWAY_DOCKERFILE_PATH=apps/server/Dockerfile`. Optional: `TRUST_PROXY` (defaults to true in production, false elsewhere), `SUPABASE_JWKS_URL`, `SUPABASE_API_URL` (where database calls go, if not `SUPABASE_URL`; https). Never set `LOCAL_SANDBOX` on a deployment.
 - **Vercel `felt` (Production):** `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (public), `VITE_SERVER_URL`. Vite inlines these at build time, so redeploy after changing them.
 
 ## Notes
