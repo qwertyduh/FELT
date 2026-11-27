@@ -29,10 +29,11 @@ import {
   requestJoin,
   type JoinRecord,
 } from './admission';
-import { arrived, trackAbsence } from './absence';
+import { arrived, sessionBack, trackAbsence } from './absence';
 import { KeyedSerial } from './keyedSerial';
 import type { StateBroadcaster } from './broadcaster';
 import { RoomGoneError, type RoomRecord } from './roomStore';
+import type { RoomActor } from './roomActor';
 import type { RoomRegistry } from './roomRegistry';
 
 /** Per user across all sockets (the per-socket bucket alone is reset by reconnecting). */
@@ -310,9 +311,12 @@ export class JoinService {
         const admitted = next.admitted.includes(userId);
         const ended = next.status === 'ended';
         let moved = false;
+        /** The visit that held the room before this enter. */
+        let from: string | undefined;
         // Only an enter that will go through may take the session or settle the absence.
         if (admitted && !ended && socket.connected && socket.data.enterSeq === seq) {
           const holder = next.sessions?.[userId];
+          from = holder;
           moved = resume === true && holder !== undefined && holder !== session;
           if (!moved) next = arrived(next, userId, session);
         }
@@ -323,6 +327,7 @@ export class JoinService {
             admitted,
             ended,
             moved,
+            from,
             kicked: next.kicked?.includes(userId) ?? false,
           },
         };
@@ -344,6 +349,8 @@ export class JoinService {
       // Gone while this was being saved: their absence mark may just have been cleared, and no
       // disconnect will report it (the socket was not in the room yet).
       this.departed(code);
+      // Nor may it keep the room from the visit that held it, which was never put out.
+      if (out.from !== undefined) await this.giveBack(actor, userId, out.from, session);
       return OK;
     }
 
@@ -371,6 +378,26 @@ export class JoinService {
       this.broadcaster.sendTo(socket, actor.state());
     }
     return OK;
+  }
+
+  /** Undo the take-over of a visit that dropped while it was being saved. */
+  private async giveBack(
+    actor: RoomActor,
+    userId: string,
+    from: string,
+    taken: string | undefined,
+  ): Promise<void> {
+    await actor.enqueue(
+      (room) => {
+        // The same visit may have got in on a new connection meanwhile: then it does hold it.
+        const here = this.io.sockets.adapter.rooms.get(memberChannel(room.code, userId));
+        const holds = [...(here ?? [])].some(
+          (id) => this.io.sockets.sockets.get(id)?.data.session === taken,
+        );
+        return holds ? room : sessionBack(room, userId, from, taken);
+      },
+      { keepTtl: true },
+    );
   }
 
   /** One user, one device: every other socket of theirs in the room loses it. */

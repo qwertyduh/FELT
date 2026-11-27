@@ -351,10 +351,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests use fake timers for each case; Playwright kills and restores a page mid-hand.
 - _Note: GO. 3 minute default seat hold; host failover after 2 minutes to the longest-seated connected player; latest device wins. Owner to know: a hybrid room with a turn timer has no force-fold and timers arrive only with P48, so a dropped player stalls the hand until removed (P48 must cover hybrid); away players are still dealt in during the hold; force-fold cannot be undone. P46 follow-ups: vacuous queued-intent test in presence.test.ts; a take-over dropping mid-save can show Open on another device wrongly. Web and server deploy together._
 
-### ⬜ P46 · Hybrid E2E game
+### 🟨 P46 · Hybrid E2E game
 - **Needs:** P42, P43, P45
 - **Do:** A Playwright suite: 4 browsers, join approval, buy-ins, 5 hands including a side pot and an undo, a top-up and end game.
 - **Done when:** the suite passes in CI.
+- _Note: GO locally, not done in CI. The 4-browser suite (apps/web/e2e/hybrid-game.spec.ts) passes and the full e2e run was 26/26 on one machine. Open owner decision: CI cannot see the specs because tests are never pushed. Fixed along the way: a take-over dropping mid-save now returns the room to the previous holder. Open (narrow): two overlapping take-overs that both drop can leave a never-entered visit as holder (recoverable with Use it here)._
 
 ---
 

@@ -75,6 +75,25 @@ export function arrived(
   return next;
 }
 
+/**
+ * The visit that took the room never got into it: whoever held it before (`from`) holds it again.
+ * Left alone if somebody else has taken it since.
+ */
+export function sessionBack(
+  room: Readonly<RoomRecord>,
+  userId: string,
+  from: string | undefined,
+  taken: string | undefined,
+): RoomRecord {
+  if (from === taken || room.sessions?.[userId] !== taken) return room as RoomRecord;
+  const { [userId]: old, ...sessions } = room.sessions ?? {};
+  void old;
+  return {
+    ...room,
+    sessions: from === undefined ? sessions : { ...sessions, [userId]: from },
+  };
+}
+
 /** After a pause, seats are held for the full time again. */
 export function heldAgain(room: Readonly<RoomRecord>, now: number): Pick<RoomRecord, 'away'> {
   if (!room.away) return {};
