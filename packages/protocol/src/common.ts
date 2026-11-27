@@ -8,6 +8,12 @@ export const ChipsSchema = z.number().int().min(0).max(MAX_CHIPS);
 /** Integer chips >= 1. */
 export const PositiveChipsSchema = z.number().int().min(1).max(MAX_CHIPS);
 
+/**
+ * Chips that accumulate at the table (stacks, bets, pots). MAX_CHIPS caps what a client may put in
+ * one request, not what a player can win, so these are bounded only by safe integers.
+ */
+export const TableChipsSchema = z.number().int().min(0);
+
 /** Opaque ids (Supabase uuid, hand ids, request ids, pot ids): bounded non-empty strings. */
 export const IdSchema = z.string().min(1).max(64);
 export const UserIdSchema = IdSchema;

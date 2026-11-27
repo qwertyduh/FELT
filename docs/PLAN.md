@@ -267,10 +267,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests for a below-min or above-max buy-in, a taken seat, a full table and the ledger entry.
 - _Note: GO round 1. Seating in rooms/{seating,seatService}.ts; P30 follow-ups fixed. Defaults the spec did not cover (owner to confirm): lobby leave is a refund; after the game starts, leave records a new `cash_out` ledger kind and the player may only sit back with exactly that amount. P43 must give a player who left busted a way to buy back in (top-up is seated-only today). P52 must net `refund`/`return` entries and keep leavers usernames. P36/P37 must await the room:enter ack before sending seat events. P32: a stack above MAX_CHIPS must not break the public schema. P44 kick: cash out before removing admission. The ledger is unbounded._
 
-### ⬜ P32 · Public state builder & broadcast
+### ✅ P32 · Public state builder & broadcast
 - **Needs:** P31
 - **Do:** `toPublicState(room, hand)`, broadcasting `room:state` with an incrementing `version` after every action.
 - **Done when:** tests show the version increments, and a privacy test confirms no hole cards or deck in the output (even when present in the hand state).
+- _Note: GO round 1. rooms/publicState.ts (allow-list builder) and rooms/broadcaster.ts (only sender of room:state), RoomActor onCommit hook. Table chip amounts are bounded only by safe integers; MAX_CHIPS still caps inputs. Follow-ups fixed in P33: presence publishing on every reconnect, same version with different content, presence writes refreshing the TTL, swallowed onCommit errors. Open: preClose writes per departing user; no duplicate-board check in the public schema. P33 mid-hand leave/reseat must not desync engine seats. P36 must call resetRoom() when leaving a room._
 
 ### ⬜ P33 · Hand lifecycle in actor (hybrid)
 - **Needs:** P32, P21, P24

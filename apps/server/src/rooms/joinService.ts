@@ -27,6 +27,7 @@ import {
   type JoinRecord,
 } from './admission';
 import { KeyedSerial } from './keyedSerial';
+import type { StateBroadcaster } from './broadcaster';
 import { RoomGoneError, type RoomRecord } from './roomStore';
 import type { RoomRegistry } from './roomRegistry';
 
@@ -44,6 +45,7 @@ export const EXPIRY_RETRY_MS = 5_000;
 export interface JoinServiceDeps {
   io: Realtime['io'];
   registry: RoomRegistry;
+  broadcaster: Pick<StateBroadcaster, 'sendTo'>;
   /** null: no service key, so new requests cannot be labelled with a username. */
   db: Db | null;
   timers?: Timers;
@@ -66,6 +68,7 @@ const OK: Ack = { ok: true };
 export class JoinService {
   private readonly io: Realtime['io'];
   private readonly registry: RoomRegistry;
+  private readonly broadcaster: JoinServiceDeps['broadcaster'];
   private readonly db: Db | null;
   private readonly timers: Timers;
   private readonly newId: () => string;
@@ -81,6 +84,7 @@ export class JoinService {
   constructor(deps: JoinServiceDeps) {
     this.io = deps.io;
     this.registry = deps.registry;
+    this.broadcaster = deps.broadcaster;
     this.db = deps.db;
     this.timers = deps.timers ?? realTimers;
     this.newId = deps.newId ?? randomUUID;
@@ -90,6 +94,11 @@ export class JoinService {
   }
 
   readonly register: SocketRegistrar = (socket, log) => {
+    // Socket.io has already removed the socket from its channels when this fires.
+    socket.on('disconnect', () => {
+      const code = socket.data.roomCode;
+      if (code) void this.departed(code, socket.data.user.userId);
+    });
     onClientEvent(
       socket,
       'room:request_join',
@@ -283,16 +292,46 @@ export class JoinService {
     if (socket.data.enterSeq !== seq) return errorAck('forbidden', 'superseded by a newer request');
     if (!socket.connected) return OK;
 
+    const fresh = !socket.rooms.has(roomChannel(code));
     const previous = socket.data.roomCode;
     if (previous && previous !== code) {
       void socket.leave(roomChannel(previous));
       void socket.leave(memberChannel(previous, userId));
+      void this.departed(previous, userId);
     }
     void socket.leave(joinWaitChannel(code, userId));
     void socket.join([roomChannel(code), memberChannel(code, userId)]);
     socket.data.roomCode = code;
     if (room.hostId === userId) socket.emit('host:inbox', hostInbox(room, this.timers.now()));
+    // A newly entered socket changes who is connected: publish a new version to the whole room,
+    // this socket included (so it is newer than anything it held before a reconnect).
+    if (fresh && (await this.publishPresence(code))) return OK;
+    // Repeat `room:enter` (or publishing failed): only this socket needs the current state.
+    if (socket.connected && socket.data.roomCode === code) {
+      this.broadcaster.sendTo(socket, actor.state());
+    }
     return OK;
+  }
+
+  /**
+   * Presence is not stored in the room, so a change of it is published by committing an unchanged
+   * copy: the version moves on and the actor's `onCommit` broadcasts. False if that failed.
+   */
+  private async publishPresence(code: RoomCode): Promise<boolean> {
+    try {
+      const actor = await this.registry.get(code);
+      if (!actor) return false;
+      await actor.enqueue((room) => ({ ...room }));
+      return true;
+    } catch {
+      return false; // e.g. Redis down or shutting down; the next commit carries presence
+    }
+  }
+
+  /** One of the user's sockets left the room; publish if that was their last one there. */
+  private async departed(code: RoomCode, userId: string): Promise<void> {
+    if (this.closed || this.io.sockets.adapter.rooms.has(memberChannel(code, userId))) return;
+    await this.publishPresence(code);
   }
 
   /** A socket waits for one room at a time: decisions carry no room code. */

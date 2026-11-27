@@ -2,12 +2,12 @@ import { z } from 'zod';
 import {
   CardSchema,
   ChipsByUserSchema,
-  ChipsSchema,
   EpochMsSchema,
   IdSchema,
   MAX_SEATS,
   SeatIndexSchema,
   StreetSchema,
+  TableChipsSchema,
   UserIdSchema,
 } from './common';
 import { RoomCodeSchema, RoomSettingsSchema, RoomStatusSchema } from './rooms';
@@ -28,9 +28,9 @@ export const PublicSeatSchema = z
     seat: SeatIndexSchema,
     userId: UserIdSchema,
     username: PublicNameSchema,
-    stack: ChipsSchema,
+    stack: TableChipsSchema,
     /** Chips put in on the current street. */
-    bet: ChipsSchema,
+    bet: TableChipsSchema,
     /** Status in the running hand; null when not dealt in. */
     handStatus: z.enum(PLAYER_HAND_STATUSES).nullable(),
     sittingOut: z.boolean(),
@@ -43,7 +43,7 @@ export type PublicSeat = z.infer<typeof PublicSeatSchema>;
 export const PublicPotSchema = z
   .object({
     id: IdSchema,
-    amount: ChipsSchema,
+    amount: TableChipsSchema,
     eligible: z.array(UserIdSchema).max(MAX_SEATS),
   })
   .strict();
@@ -67,9 +67,9 @@ export const PublicHandSchema = z
     board: z.array(CardSchema).max(5),
     pots: z.array(PublicPotSchema).max(MAX_SEATS),
     /** Highest street bet to match. */
-    currentBet: ChipsSchema,
+    currentBet: TableChipsSchema,
     /** Min-raise increment (last full raise). */
-    lastFullRaise: ChipsSchema,
+    lastFullRaise: TableChipsSchema,
     /** Seat to act, or null. */
     currentActor: SeatIndexSchema.nullable(),
     button: SeatIndexSchema,

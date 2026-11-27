@@ -46,6 +46,11 @@ export interface RoomActorOptions {
   taskTimeoutMs?: number;
   /** Called when the room's key no longer exists (the actor is disposed first). */
   onGone?: (actor: RoomActor) => void;
+  /**
+   * Called synchronously right after each committed (persisted) change, before the next task can
+   * start, so calls arrive in version order. Errors are swallowed: the change is already saved.
+   */
+  onCommit?: (room: Readonly<RoomRecord>) => void;
 }
 
 /**
@@ -62,6 +67,7 @@ export class RoomActor {
   private readonly now: () => number;
   private readonly timeoutMs: number;
   private readonly onGone: ((a: RoomActor) => void) | undefined;
+  private readonly onCommit: RoomActorOptions['onCommit'];
   private last: number;
 
   constructor(
@@ -74,6 +80,7 @@ export class RoomActor {
     this.now = opts.now ?? Date.now;
     this.timeoutMs = opts.taskTimeoutMs ?? TASK_TIMEOUT_MS;
     this.onGone = opts.onGone;
+    this.onCommit = opts.onCommit;
     this.last = this.now();
   }
 
@@ -151,6 +158,11 @@ export class RoomActor {
           throw err;
         }
         this.room = committed;
+        try {
+          this.onCommit?.(committed);
+        } catch {
+          // Publishing must never fail an already persisted change.
+        }
         return result;
       } finally {
         this.pending -= 1;

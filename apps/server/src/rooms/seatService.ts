@@ -1,7 +1,7 @@
 /**
  * Seating (P31): `room:sit`, `room:sit_out`, `room:sit_in`, `room:leave`. They act on the room the
  * socket entered (`room:enter`); the rules, including the admission re-check, run inside that
- * room's actor queue. Broadcasting the new state is P32.
+ * room's actor queue, whose commit hook broadcasts the new state.
  */
 import type { Ack, RoomCode } from '@felt/protocol';
 import type { Db } from '../db/supabase';

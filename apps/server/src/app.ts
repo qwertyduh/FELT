@@ -23,6 +23,7 @@ import { RoomStore } from './rooms/roomStore';
 import { RoomRegistry } from './rooms/roomRegistry';
 import { JoinService } from './rooms/joinService';
 import { SeatService } from './rooms/seatService';
+import { StateBroadcaster } from './rooms/broadcaster';
 import { roomChannel } from './realtime/channels';
 
 function hasPinoPretty(): boolean {
@@ -181,6 +182,8 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
       ...(deps.realtimeTimers ? { timers: deps.realtimeTimers } : {}),
     }),
   );
+  // The only sender of `room:state`.
+  const broadcaster = new StateBroadcaster(app.realtime.io, { log: app.log });
   // Room actors; null when Redis lacks the room commands (same optional pattern as the routes).
   const r = deps.redis as Partial<RoomRedis>;
   const roomRegistry =
@@ -188,6 +191,7 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
       ? new RoomRegistry(new RoomStore(r as RoomRedis), {
           // Rooms with admitted sockets in them are never evicted.
           isRoomActive: (code) => app.realtime.io.sockets.adapter.rooms.has(roomChannel(code)),
+          actor: { onCommit: (room) => broadcaster.publish(room) },
         })
       : null;
   app.decorate('roomRegistry', roomRegistry);
@@ -201,6 +205,7 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
     const joins = new JoinService({
       io: app.realtime.io,
       registry: roomRegistry,
+      broadcaster,
       db,
       ...(deps.roomTimers ? { timers: deps.roomTimers } : {}),
     });
