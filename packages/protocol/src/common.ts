@@ -14,6 +14,9 @@ export const PositiveChipsSchema = z.number().int().min(1).max(MAX_CHIPS);
  */
 export const TableChipsSchema = z.number().int().min(0);
 
+/** Counts the changes to a hand, so an action cannot land on a later turn than it was meant for. */
+export const TurnSeqSchema = z.number().int().min(0);
+
 /** Opaque ids (Supabase uuid, hand ids, request ids, pot ids): bounded non-empty strings. */
 export const IdSchema = z.string().min(1).max(64);
 export const UserIdSchema = IdSchema;

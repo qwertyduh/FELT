@@ -235,7 +235,7 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | `room:sit` | `{ seat, buyIn }` | Admitted player; `minBuyIn ≤ buyIn ≤ maxBuyIn` |
 | `room:sit_out` / `room:sit_in` | — | Player |
 | `room:leave` | — | Player |
-| `game:act` | `{ handId, type: 'fold'\|'check'\|'call'\|'bet'\|'raise'\|'all_in', amount? }` | Player on turn |
+| `game:act` | `{ handId, turnSeq, type: 'fold'\|'check'\|'call'\|'bet'\|'raise'\|'all_in', amount? }` | Player on turn; a `turnSeq` older than `room:state` is refused as `stale_hand` |
 | `player:topup_request` | `{ amount }` | Seated player |
 | `host:admit` | `{ requestId, approve }` | Host |
 | `host:topup` | `{ requestId, approve }` | Host |

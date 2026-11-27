@@ -21,6 +21,7 @@ import {
   startFailure,
   type Returning,
 } from '../lib/seating';
+import { usePressGuard } from '../lib/usePressGuard';
 import { useStillCards } from '../lib/useStillCards';
 import { InviteButton } from './InviteButton';
 import { SeatMap } from './SeatMap';
@@ -143,8 +144,7 @@ function BuyInForm({
 
 function StartButton({ ready, client }: { ready: boolean; client: Client }) {
   const { list, held, isStill } = useStillCards<HTMLDivElement>(true, START_ARM_MS);
-  /** Whether the current press began on this button while it could be tapped. */
-  const pressed = useRef(false);
+  const guard = usePressGuard();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sending = useRef(false);
@@ -168,14 +168,9 @@ function StartButton({ ready, client }: { ready: boolean; client: Client }) {
         data-card="start"
         className={PRIMARY}
         disabled={!ready || held.has('start') || busy}
-        onPointerDown={() => (pressed.current = isStill('start'))}
-        onPointerCancel={() => (pressed.current = false)}
+        onPointerDown={() => guard.press(isStill('start') ? 'start' : null)}
         onClick={(e) => {
-          // A touch click can land where the finger lifts, not where it came down, so the press
-          // must have started here. `detail` 0 is the keyboard: there is no press to compare.
-          const began = pressed.current;
-          pressed.current = false;
-          if (e.detail === 0 || began) void start();
+          if (guard.took('start', e)) void start();
         }}
       >
         {busy ? 'Starting…' : 'Start game'}
@@ -315,7 +310,11 @@ export function WaitingRoom({
   return (
     <>
       <div className={`flex flex-1 flex-col gap-2 ${ABOVE_REQUESTS}`}>
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-1">
+        <div
+          className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-1 ${
+            started ? '[[data-testid=entered-room]:has([data-testid=host-inbox])_&]:order-last' : ''
+          }`}
+        >
           <h1 className={started ? 'sr-only' : 'font-display text-2xl font-semibold text-cream'}>
             {title}
           </h1>

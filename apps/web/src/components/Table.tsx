@@ -8,7 +8,7 @@
  */
 import type { PublicRoomState, PublicSeat } from '@felt/protocol';
 import { chips, shortChips } from '../lib/seating';
-import { potTotal, seatPosition, streetName, toCall, turnLine } from '../lib/table';
+import { potTotal, seatPosition, streetName, turnLine } from '../lib/table';
 
 /** Fixed box, positioned by `seatPosition`. */
 const SEAT =
@@ -45,6 +45,7 @@ function Player({
   turn,
   dealer,
   inHand,
+  over,
   inward,
   style,
 }: {
@@ -54,6 +55,8 @@ function Player({
   dealer: boolean;
   /** A hand is on screen. */
   inHand: boolean;
+  /** The hand has ended: stacks are final, so an all-in loser shows 0. */
+  over: boolean;
   inward: 'left' | 'right';
   style: Style;
 }) {
@@ -104,7 +107,7 @@ function Player({
           {seat.username}
         </span>
         <span className="font-semibold tabular-nums">
-          {allIn && seat.stack === 0 ? 'All-in' : shortChips(seat.stack)}
+          {allIn && seat.stack === 0 && !over ? 'All-in' : shortChips(seat.stack)}
         </span>
         {seat.bet > 0 ? (
           <span
@@ -189,6 +192,7 @@ export function Table({
                 turn={room.hand?.currentActor === i}
                 dealer={dealer}
                 inHand={room.hand !== null}
+                over={room.hand?.street === 'ended'}
                 inward={inward}
                 style={style}
               />
@@ -234,7 +238,7 @@ export function Table({
 
 function Figure({ label, value, id }: { label: string; value: string; id: string }) {
   return (
-    <div data-testid={id} className="min-w-0">
+    <div data-testid={id} className="flex min-w-0 items-baseline gap-2">
       <dt className="text-xs text-cream/75">{label}</dt>
       <dd className="text-lg font-semibold text-cream tabular-nums">{value}</dd>
     </div>
@@ -243,12 +247,11 @@ function Figure({ label, value, id }: { label: string; value: string; id: string
 
 /**
  * Below the felt and outside anything that scrolls: whose turn it is and, for a seated player, the
- * pot, their stack and the amount to call (PRD: never hide money).
+ * pot and their stack (PRD: never hide money). The amount to call is on the action bar.
  */
 export function TableSummary({ room, userId }: { room: PublicRoomState; userId: string }) {
   const me = room.seats.find((s) => s?.userId === userId) ?? null;
   const line = turnLine(room, userId);
-  const call = me && toCall(room.hand, me);
   const money = (n: number) => shortChips(n, 10_000_000);
   return (
     <div className="flex flex-col gap-1 text-center">
@@ -264,10 +267,9 @@ export function TableSummary({ room, userId }: { room: PublicRoomState; userId: 
         {line}
       </p>
       {me && (
-        <dl className="grid grid-cols-3 gap-2 rounded-xl bg-felt-950 px-2 py-1">
+        <dl className="flex flex-wrap justify-center gap-x-6 rounded-xl bg-felt-950 px-2">
           <Figure id="my-pot" label="Pot" value={money(potTotal(room))} />
           <Figure id="my-stack" label="Your stack" value={money(me.stack)} />
-          <Figure id="my-call" label="To call" value={call === null ? '–' : money(call)} />
         </dl>
       )}
     </div>

@@ -1,0 +1,70 @@
+/**
+ * Action bar helpers (P40). What is allowed, and between which amounts, comes from the server
+ * (`hand.options`, built by the engine); this only suggests sizes inside that range and words the
+ * refusals.
+ */
+import type { ErrorPayload, GameActPayload, TurnOptions } from '@felt/protocol';
+
+export type RaiseOptions = NonNullable<TurnOptions['raise']>;
+
+export const POT_PRESETS = [
+  { label: '½', name: 'Half pot', share: 1 / 2 },
+  { label: '⅔', name: 'Two thirds pot', share: 2 / 3 },
+  { label: 'Pot', name: 'Pot', share: 1 },
+] as const;
+
+/**
+ * A pot-sized share as a "raise to" total: call first, then put in `share` of the pot as it then
+ * stands. `pot` counts every chip in the middle, this street's bets included.
+ */
+export function potSized(
+  share: number,
+  {
+    raise,
+    pot,
+    currentBet,
+    call,
+  }: { raise: RaiseOptions; pot: number; currentBet: number; call: number },
+): number {
+  const to = currentBet + Math.round(share * (pot + call));
+  return Math.min(raise.max, Math.max(raise.min, to));
+}
+
+export type Move =
+  { type: 'fold' | 'check' | 'call' | 'all_in' } | { type: 'bet' | 'raise'; amount: number };
+
+/** The chosen size as a move: the top of the range is always sent as all-in. */
+export function sizedMove(raise: RaiseOptions, amount: number): Move {
+  return amount >= raise.max ? { type: 'all_in' } : { type: raise.type, amount };
+}
+
+export const actPayload = (handId: string, turnSeq: number, move: Move): GameActPayload => ({
+  handId,
+  turnSeq,
+  ...move,
+});
+
+export function actFailure({ code }: ErrorPayload): string {
+  switch (code as string) {
+    case 'stale_hand':
+    case 'not_your_turn':
+    case 'hand_ended':
+    case 'no_hand':
+    case 'awaiting_host':
+      return 'The table moved on. Check it first.';
+    case 'bet_too_small':
+    case 'raise_too_small':
+    case 'bet_exceeds_stack':
+    case 'invalid_amount':
+    case 'illegal_action':
+      return "The table didn't allow that.";
+    case 'room_paused':
+      return 'The game is paused.';
+    case 'rate_limited':
+      return 'Too many taps. Wait a moment.';
+    case 'timeout':
+      return 'No answer. Check the table first.';
+    default:
+      return "Couldn't send that. Try again.";
+  }
+}

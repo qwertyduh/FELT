@@ -8,6 +8,7 @@ import {
   PositiveChipsSchema,
   SeatIndexSchema,
   TableChipsByUserSchema,
+  TurnSeqSchema,
   UserIdSchema,
 } from './common';
 import { HostSettingsPatchSchema, RoomCodeSchema } from './rooms';
@@ -81,17 +82,22 @@ export type Ack = z.infer<typeof AckSchema>;
 
 // ---------- Client -> server payloads ----------
 const handId = IdSchema;
+const turnSeq = TurnSeqSchema;
 const requestId = IdSchema;
 const userRef = z.object({ userId: UserIdSchema }).strict();
 
-/** `amount` is the TOTAL street bet ("raise to"), mirroring the engine; none for other types. */
+/**
+ * `amount` is the TOTAL street bet ("raise to"), mirroring the engine; none for other types.
+ * `turnSeq` is the `room:state` value the player was looking at: a late or doubled send is refused
+ * as `stale_hand` instead of acting on a later turn.
+ */
 export const GameActPayloadSchema = z.discriminatedUnion('type', [
-  z.object({ handId, type: z.literal('fold') }).strict(),
-  z.object({ handId, type: z.literal('check') }).strict(),
-  z.object({ handId, type: z.literal('call') }).strict(),
-  z.object({ handId, type: z.literal('all_in') }).strict(),
-  z.object({ handId, type: z.literal('bet'), amount: PositiveChipsSchema }).strict(),
-  z.object({ handId, type: z.literal('raise'), amount: PositiveChipsSchema }).strict(),
+  z.object({ handId, turnSeq, type: z.literal('fold') }).strict(),
+  z.object({ handId, turnSeq, type: z.literal('check') }).strict(),
+  z.object({ handId, turnSeq, type: z.literal('call') }).strict(),
+  z.object({ handId, turnSeq, type: z.literal('all_in') }).strict(),
+  z.object({ handId, turnSeq, type: z.literal('bet'), amount: PositiveChipsSchema }).strict(),
+  z.object({ handId, turnSeq, type: z.literal('raise'), amount: PositiveChipsSchema }).strict(),
 ]);
 export type GameActPayload = z.infer<typeof GameActPayloadSchema>;
 

@@ -90,6 +90,48 @@ function canRaise(state: HandState, p: HandPlayer): boolean {
   return state.currentBet - p.facedBet >= state.lastFullRaise;
 }
 
+/** What the player on turn may do. `bet`/`raise` amounts are street totals ("raise to"). */
+export interface LegalActions {
+  seat: number;
+  /** Facing nothing: `check`. Otherwise the chips a `call` puts in (the whole stack at most). */
+  check: boolean;
+  call: number | null;
+  /**
+   * The sizes open to a bet or raise; `max` is all-in, and `min === max` means only all-in is left.
+   * Null when the player cannot raise: too few chips, betting not reopened, or nobody left who
+   * could answer.
+   */
+  raise: { type: 'bet' | 'raise'; min: number; max: number } | null;
+}
+
+/**
+ * The choices of the current actor, or null when nobody is on turn (P40). Fold is always one of
+ * them. Everything listed is accepted by `applyAction`. The one thing it accepts that is left out
+ * on purpose is a raise when every opponent still in is all-in: it could only come straight back.
+ */
+export function legalActions(state: HandState): LegalActions | null {
+  if (state.result !== null || !BETTING_STREETS.includes(state.street)) return null;
+  const me = state.players.find((p) => p.seat === state.currentActor);
+  if (!me || !isActive(me)) return null;
+  const toCall = state.currentBet - me.bet;
+  const max = me.bet + me.stack;
+  const answerable = state.players.some((p) => p !== me && isActive(p));
+  let raise: LegalActions['raise'] = null;
+  if (answerable && max > state.currentBet && canRaise(state, me)) {
+    if (state.currentBet > 0) {
+      raise = { type: 'raise', min: Math.min(state.currentBet + state.lastFullRaise, max), max };
+    } else if (state.street !== 'preflop') {
+      raise = { type: 'bet', min: Math.min(state.bigBlind, max), max };
+    }
+  }
+  return {
+    seat: me.seat,
+    check: toCall <= 0,
+    call: toCall > 0 ? Math.min(toCall, me.stack) : null,
+    raise,
+  };
+}
+
 /**
  * Settle a hand where everyone else folded (P22). The winner's uncalled excess (over the
  * second-highest commitment) goes back as a bet_returned, as do folded chips the winner never

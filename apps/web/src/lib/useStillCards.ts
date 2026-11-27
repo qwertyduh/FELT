@@ -5,7 +5,9 @@ import { flushSync } from 'react-dom';
  * Which cards may not be tapped yet. Positions are read from the screen itself (after every render,
  * every frame and again at the tap), so no cause of movement needs to be known: pushes, expiry,
  * another tab, scrolling, resizing or content around them. A card is any `[data-card]` element inside
- * the element given `list`. Used by the request cards (HostInbox) and the Start button.
+ * the element given `list`. A card outside an overlay marked `[data-cover]` (the bet-sizing sheet)
+ * is held while the overlay is up and for `settleMs` after. Used by the request cards (HostInbox),
+ * the Start button and the action bar.
  */
 export function useStillCards<T extends HTMLElement>(active: boolean, settleMs: number) {
   const list = useRef<T>(null);
@@ -16,11 +18,13 @@ export function useStillCards<T extends HTMLElement>(active: boolean, settleMs: 
     const now = performance.now(); // monotonic: a clock set back cannot stretch a hold
     const present = new Set<string>();
     const waiting: string[] = [];
+    const cover = document.querySelector('[data-cover]');
     for (const el of list.current?.querySelectorAll<HTMLElement>('[data-card]') ?? []) {
       const id = el.dataset.card!;
       const { top, left } = el.getBoundingClientRect();
       let card = seen.current.get(id);
-      if (!card || Math.abs(card.top - top) > 1 || Math.abs(card.left - left) > 1) {
+      const covered = cover !== null && !cover.contains(el);
+      if (!card || covered || Math.abs(card.top - top) > 1 || Math.abs(card.left - left) > 1) {
         card = { top, left, until: now + settleMs };
         seen.current.set(id, card);
       }

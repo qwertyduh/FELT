@@ -3,13 +3,14 @@
  * field (an allow-list). Never spread a room, seat, hand or player object: that is how hole cards,
  * the deck, the ledger or join requests would leak.
  */
-import type { HandState } from '@felt/engine';
+import { legalActions, type HandState } from '@felt/engine';
 import type { PublicHand, PublicRoomState, PublicSeat } from '@felt/protocol';
 import type { RoomRecord } from './roomStore';
 
 /** A running hand as the server holds it: the engine state plus what the engine does not track. */
 export interface LiveHand {
   handId: string;
+  turnSeq?: number | undefined;
   state: HandState;
   /** Absolute epoch ms; null when there is no turn timer. */
   turnDeadline: number | null;
@@ -19,9 +20,23 @@ export interface LiveHand {
   departed?: readonly string[];
 }
 
-function toPublicHand({ handId, state, turnDeadline, proposedAwards }: LiveHand): PublicHand {
+function toPublicOptions(state: HandState): PublicHand['options'] {
+  const legal = legalActions(state);
+  if (!legal) return null;
+  const { check, call, raise } = legal;
+  return {
+    check,
+    call,
+    raise: raise ? { type: raise.type, min: raise.min, max: raise.max } : null,
+  };
+}
+
+function toPublicHand(live: LiveHand): PublicHand {
+  const { handId, state, turnDeadline, proposedAwards } = live;
   return {
     handId,
+    turnSeq: live.turnSeq ?? 0,
+    options: toPublicOptions(state),
     street: state.street,
     board: [...state.board],
     pots: state.pots.map((p) => ({ id: p.id, amount: p.amount, eligible: [...p.eligible] })),
@@ -50,6 +65,7 @@ export function liveHandOf(room: Readonly<RoomRecord>): LiveHand | null {
   const { proposal } = hand;
   return {
     handId: hand.handId,
+    turnSeq: hand.turnSeq,
     state: hand.state,
     turnDeadline: null, // P48
     departed: hand.departed,

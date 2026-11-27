@@ -8,6 +8,7 @@ import {
   type RoomCode,
   type RoomPreview,
 } from '@felt/protocol';
+import { ActionBar } from '../components/ActionBar';
 import { HostInbox } from '../components/HostInbox';
 import { WaitingRoom } from '../components/WaitingRoom';
 import { apiFetch } from '../lib/api';
@@ -253,6 +254,7 @@ function EnteredScreen({
   client: SocketClient;
 }) {
   const room = useRoomStore((s) => s.room);
+  const mine = room?.seats.find((s) => s?.userId === userId) ?? null;
   return (
     <div data-testid="entered-room" className="flex flex-1 flex-col">
       {room ? (
@@ -264,13 +266,16 @@ function EnteredScreen({
           </Note>
         </Screen>
       )}
-      {/* P40: put the action bar after the inbox, so that nothing above can move it. */}
       <HostInbox
         userId={userId}
         ready={online}
         client={client}
         compact={room !== null && room.status !== 'lobby'}
       />
+      {/* Last on the screen, so nothing above can move it. */}
+      {room && mine && (room.status === 'playing' || room.status === 'paused') && (
+        <ActionBar room={room} me={mine} ready={online} client={client} />
+      )}
     </div>
   );
 }

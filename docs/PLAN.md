@@ -315,10 +315,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** screenshots at 375px with 2, 6 and 9 players.
 - _Note: GO. Seats keep fixed positions (own seat not rotated to the bottom: owner call). No SB/BB markers. P42 must take a server fix: the pot reads low when a player leaves mid-street (departed bets are not in room:state); it must land before any Leave or kick UI (P44). Folded into P40: lost all-in shows All-in at hand over, stale Start press ref, table with a request card plus action bar is tight._
 
-### ⬜ P40 · Web: action bar
+### ✅ P40 · Web: action bar
 - **Needs:** P39, P33
 - **Do:** Fold/Check/Call/Bet/Raise/All-in, showing only the legal ones; a bet slider with ½, ⅔, pot and all-in presets; ack errors shown inline.
 - **Done when:** Playwright plays a hybrid hand to the river through the UI.
+- _Note: GO. Added engine legalActions, hand.turnSeq (required on game:act, so web and server must deploy together) and hand.options. Owner calls: no typed bet amount (slider and presets only); Fold stays offered with no confirm when Check is free; raise hidden when all opponents are all-in. P42 must never restore an older turnSeq on undo. Folded into P41: error notice hides To call; All-in label means two different amounts; taps silently ignored after a lost ack; own seat clipped at 320x568 with a request card._
 
 ### ⬜ P41 · Web: hybrid host controls
 - **Needs:** P40

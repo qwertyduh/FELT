@@ -8,6 +8,7 @@ import {
   SeatIndexSchema,
   StreetSchema,
   TableChipsSchema,
+  TurnSeqSchema,
   UserIdSchema,
 } from './common';
 import { RoomCodeSchema, RoomSettingsSchema, RoomStatusSchema } from './rooms';
@@ -60,9 +61,32 @@ export const PendingAwardSchema = z
   })
   .strict();
 
+/**
+ * The choices of the player on turn, as the engine computes them (clients show these and apply no
+ * betting rules of their own). Public: it follows from the betting everyone has seen. Fold is
+ * always allowed.
+ */
+export const TurnOptionsSchema = z
+  .object({
+    check: z.boolean(),
+    /** Chips a call puts in; null when there is nothing to call. */
+    call: TableChipsSchema.nullable(),
+    /** Street totals ("raise to"); `max` is all-in. Null when betting or raising is not open. */
+    raise: z
+      .object({ type: z.enum(['bet', 'raise']), min: TableChipsSchema, max: TableChipsSchema })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+export type TurnOptions = z.infer<typeof TurnOptionsSchema>;
+
 export const PublicHandSchema = z
   .object({
     handId: IdSchema,
+    /** Goes up with every change to the hand; `game:act` must quote it. */
+    turnSeq: TurnSeqSchema,
+    /** For `currentActor`; null when nobody is on turn. */
+    options: TurnOptionsSchema.nullable(),
     street: StreetSchema,
     board: z.array(CardSchema).max(5),
     pots: z.array(PublicPotSchema).max(MAX_SEATS),

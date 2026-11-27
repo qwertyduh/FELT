@@ -112,7 +112,7 @@ function advanceTo(
   leaver?: string,
 ): RoomRecord {
   const before = room.game!.hand!;
-  let hand: GameHand = { ...before, state };
+  let hand: GameHand = { ...before, state, turnSeq: (before.turnSeq ?? 0) + 1 };
   let next: RoomRecord = { ...room, seats: syncStacks(room, hand) };
   if (leaver !== undefined) {
     next = leaveSeat(next, leaver, now).room;
@@ -148,7 +148,13 @@ function deal(room: Readonly<RoomRecord>, ctx: GameContext): Result<RoomRecord> 
   );
   if (!r.ok) return r;
   const state = r.value.state;
-  const hand: GameHand = { handId: ctx.newId(), state, departed: [], proposal: null };
+  const hand: GameHand = {
+    handId: ctx.newId(),
+    turnSeq: 0,
+    state,
+    departed: [],
+    proposal: null,
+  };
   const next: RoomRecord = {
     ...room,
     status: 'playing',
@@ -249,6 +255,9 @@ export function act(
   if ('refused' in found) return found.refused;
   if (!playerOf(found.hand, userId)) {
     return refuse(room, 'not_seated', 'you are not in this hand');
+  }
+  if (intent.turnSeq !== (found.hand.turnSeq ?? 0)) {
+    return refuse(room, 'stale_hand', 'the table has moved on');
   }
   const action: PlayerAction =
     intent.type === 'bet' || intent.type === 'raise'
