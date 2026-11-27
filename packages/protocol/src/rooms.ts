@@ -17,6 +17,12 @@ export const RoomCodeSchema = z
   .brand<'RoomCode'>();
 export type RoomCode = z.infer<typeof RoomCodeSchema>;
 
+// ---------- Join requests (PRD 5.2) ----------
+/** A join request the host has not answered expires after this long. */
+export const JOIN_REQUEST_TTL_MS = 2 * 60_000;
+/** A denied player cannot ask again for this long. */
+export const DENY_COOLDOWN_MS = 10 * 60_000;
+
 // ---------- Settings (PRD 5.2) ----------
 export const TURN_TIMER_OPTIONS = [15, 30, 60] as const;
 /** null = timer off. */

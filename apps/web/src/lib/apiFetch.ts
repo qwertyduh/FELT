@@ -19,6 +19,14 @@ export class ApiError extends Error {
 
 export type RefreshResult = 'ok' | 'rejected' | 'transient';
 
+export interface ApiCallOptions {
+  /**
+   * false: a 503 is returned at once. Use for calls that are not safe to repeat: the server may
+   * have done part of the work (a retried `POST /rooms` can leave an orphan room behind).
+   */
+  retryUnavailable?: boolean;
+}
+
 export interface ApiFetchDeps {
   baseUrl: string;
   fetch: typeof fetch;
@@ -64,7 +72,8 @@ function codeOf(body: unknown): string {
  *  - 401 expired/invalid: refresh the session once (shared by concurrent calls), retry once; if
  *    that still fails, sign out. A transient refresh failure surfaces the error without signing out.
  *  - 401 missing/malformed (or anything else): no loop, throws ApiError.
- *  - 503: exponential backoff (Retry-After honoured, capped), bounded attempts, never signs out.
+ *  - 503: exponential backoff (Retry-After honoured, capped), bounded attempts, never signs out;
+ *    no retry at all with `retryUnavailable: false`.
  */
 export function createApiFetch(deps: ApiFetchDeps) {
   const maxRetries = deps.maxUnavailableRetries ?? 4;
@@ -79,7 +88,12 @@ export function createApiFetch(deps: ApiFetchDeps) {
     return refreshing;
   };
 
-  async function send(path: string, init: RequestInit | undefined): Promise<Response> {
+  async function send(
+    path: string,
+    init: RequestInit | undefined,
+    options: ApiCallOptions | undefined,
+  ): Promise<Response> {
+    const retries = options?.retryUnavailable === false ? 0 : maxRetries;
     for (let attempt = 0; ; attempt++) {
       const token = await deps.getAccessToken();
       if (!token) throw new ApiError({ status: 401, code: 'no_session' });
@@ -91,7 +105,7 @@ export function createApiFetch(deps: ApiFetchDeps) {
       } catch {
         throw new ApiError({ status: 0, code: 'network' });
       }
-      if (res.status !== 503 || attempt >= maxRetries) return res;
+      if (res.status !== 503 || attempt >= retries) return res;
       const fromHeader = parseRetryAfter(res.headers.get('Retry-After'));
       const backoff = baseDelay * 2 ** attempt;
       await deps.sleep(Math.min(fromHeader ?? backoff, maxDelay));
@@ -104,13 +118,17 @@ export function createApiFetch(deps: ApiFetchDeps) {
     return code === 'expired' || code === 'invalid';
   };
 
-  return async function apiFetch<T = unknown>(path: string, init?: RequestInit): Promise<T> {
-    let res = await send(path, init);
+  return async function apiFetch<T = unknown>(
+    path: string,
+    init?: RequestInit,
+    options?: ApiCallOptions,
+  ): Promise<T> {
+    let res = await send(path, init, options);
     if (await isDead401(res)) {
       const refreshed = await refreshOnce();
       if (refreshed === 'transient') throw new ApiError({ status: 401, code: 'refresh_failed' });
       if (refreshed === 'ok') {
-        res = await send(path, init);
+        res = await send(path, init, options);
         if (!(await isDead401(res))) return finish<T>(res);
       }
       await deps.signOut();

@@ -58,10 +58,13 @@ export function withMode(form: RoomForm, mode: GameMode): RoomForm {
   };
 }
 
-/** Digits only (grouping commas and spaces allowed). Anything else is NaN, never silently fixed. */
+/** Plain digits, or digits in groups of three split by one kind of separator (comma or space). */
+const WHOLE_NUMBER = /^(?:\d+|\d{1,3}([,\s])\d{3}(?:\1\d{3})*)$/;
+
+/** Anything else (e.g. "1,5" or "10,00") is NaN, never silently fixed. */
 function toNumber(raw: string): number {
-  const s = raw.replace(/[,\s]/g, '');
-  return /^\d+$/.test(s) ? Number(s) : Number.NaN;
+  const s = raw.trim();
+  return WHOLE_NUMBER.test(s) ? Number(s.replace(/[,\s]/g, '')) : Number.NaN;
 }
 
 function chipError(raw: string): string | null {

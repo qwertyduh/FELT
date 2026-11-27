@@ -291,10 +291,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** Playwright creates a room as a guest; a 375px screenshot.
 - _Note: GO round 1. `/new` route (routes/CreateRoom.tsx, lib/createRoom.ts). Hybrid is preselected; Online can be chosen but is not playable until Stage D. Blind increase has only off / every N minutes: nothing says by how much blinds rise (owner decision). Follow-ups fixed in P36: no automatic 503 retry on POST /rooms (could orphan rooms), scroll invalid fields into view, reject malformed number grouping. Open: create can be repeated via Back; no request timeout._
 
-### ⬜ P36 · Web: join flow
+### ✅ P36 · Web: join flow
 - **Needs:** P30, P34
 - **Do:** `/r/:code` preview → **Request to join** → a pending screen with a countdown → admitted (enter room), denied, or expired states.
 - **Done when:** a two-browser Playwright test covers request → admit, and request → deny shows the cooldown.
+- _Note: GO round 1. Join flow in routes/Room.tsx and lib/{joinSession,joinStorage,returnTo}.ts; the session store `ready` flag is set only after the room:enter ack (P37/P38 gate sends on it). Added a Cancel request button; returnTo applies to every deep link; leaving the screen does not cancel. Nothing owns typing a room code by hand (PRD 5.2): owner to decide. P35 follow-ups fixed. Fixed in P37: long usernames overflow the pending screen, a cancelled request re-created by a second tab, room:cancel_request cancelling every room, a corrupt denied-until, missing returnTo unit test. Open: no auto retry after a failed preview load._
 
 ### ⬜ P37 · Web: host request inbox
 - **Needs:** P36

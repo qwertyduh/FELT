@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import {
   checkUsernameLocally,
   normalizeUsername,
@@ -10,6 +10,7 @@ import { AppealDialog } from '../components/AppealDialog';
 import { apiFetch } from '../lib/api';
 import { useAuthStore } from '../lib/authStore';
 import { loadMe, setClaimedUsername } from '../lib/meStore';
+import { returnToFrom } from '../lib/returnTo';
 import { verdictFromError, type Verdict } from '../lib/usernameCopy';
 import { useUsernameCheck } from '../lib/useUsernameCheck';
 
@@ -38,6 +39,7 @@ function verdictFeedback(v: Verdict): Feedback {
 
 export function Onboarding() {
   const navigate = useNavigate();
+  const returnTo = returnToFrom(useLocation().state);
   const userId = useAuthStore((s) => s.userId);
   const [raw, setRaw] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -85,13 +87,13 @@ export function Onboarding() {
       });
       // The server returns the normalised name: use it.
       setClaimedUsername(userId, typeof res?.username === 'string' ? res.username : name);
-      void navigate('/', { replace: true });
+      void navigate(returnTo, { replace: true });
     } catch (err) {
       const verdict = verdictFromError(err);
       if (verdict.kind === 'already_set') {
         setClaimVerdict({ name, verdict });
         await loadMe(userId, { force: true }); // route guard then sends them on
-        void navigate('/', { replace: true });
+        void navigate(returnTo, { replace: true });
         return;
       }
       setClaimVerdict({ name, verdict });

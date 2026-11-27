@@ -3,11 +3,15 @@
  * timers: `now` is passed in, inputs are never mutated, and an unchanged room is returned as the
  * same object (so the actor persists nothing).
  */
-import type { ErrorCode, ServerEventPayload } from '@felt/protocol';
+import {
+  DENY_COOLDOWN_MS,
+  JOIN_REQUEST_TTL_MS,
+  type ErrorCode,
+  type ServerEventPayload,
+} from '@felt/protocol';
 import type { RoomRecord } from './roomStore';
 
-export const JOIN_REQUEST_TTL_MS = 2 * 60_000;
-export const DENY_COOLDOWN_MS = 10 * 60_000;
+export { DENY_COOLDOWN_MS, JOIN_REQUEST_TTL_MS };
 /** Matches the `host:inbox` schema bound. */
 export const MAX_PENDING_JOINS = 50;
 

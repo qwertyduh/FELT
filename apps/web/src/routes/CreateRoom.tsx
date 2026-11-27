@@ -38,21 +38,35 @@ interface NumberFieldProps {
   onChange: (value: string) => void;
 }
 
+/**
+ * Keeps a field and its message clear of the sticky footer: `scroll-mb-36` on the wrapper reserves
+ * the footer's height, and `nearest` does not move a field that is already clear of it.
+ */
+function reveal(input: HTMLElement | null | undefined): void {
+  input?.closest('[data-field]')?.scrollIntoView?.({ block: 'nearest' });
+}
+
 function NumberField({ name, label, value, error, placeholder, onChange }: NumberFieldProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  // An error that appears while typing adds a line here and grows the footer.
+  useEffect(() => {
+    if (error && document.activeElement === inputRef.current) reveal(inputRef.current);
+  }, [error]);
+
   return (
-    <div className="min-w-0">
+    <div data-field className="min-w-0 scroll-mt-4 scroll-mb-36">
       <label htmlFor={name} className="mb-1 block text-sm text-cream/75">
         {label}
       </label>
       <div className={`${BOX} ${error ? 'border-chip-red' : 'border-brass-dim'}`}>
         <input
+          ref={inputRef}
           id={name}
           name={name}
           type="text"
           inputMode="numeric"
           autoComplete="off"
           enterKeyHint="done"
-          maxLength={13}
           value={value}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
@@ -135,18 +149,23 @@ export function CreateRoom() {
     if (busy.current) return;
     if (!result.ok) {
       const first = formRef.current?.querySelector<HTMLInputElement>('[aria-invalid="true"]');
-      first?.focus();
+      first?.focus({ preventScroll: true });
+      reveal(first);
       return;
     }
     busy.current = true;
     setSubmitting(true);
     setServerError(null);
     try {
-      const res = await apiFetch('/rooms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(result.settings),
-      });
+      const res = await apiFetch(
+        '/rooms',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(result.settings),
+        },
+        { retryUnavailable: false },
+      );
       const { code } = CreateRoomResponseSchema.parse(res);
       // If the host already walked away from this screen, don't yank them into the room.
       if (mounted.current) void navigate(`/r/${code}`);

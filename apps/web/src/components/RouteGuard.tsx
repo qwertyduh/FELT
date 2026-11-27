@@ -3,6 +3,7 @@ import { Navigate, useLocation } from 'react-router';
 import { restartAuth } from '../lib/auth';
 import { useAuthStore } from '../lib/authStore';
 import { loadMe, useMeStore } from '../lib/meStore';
+import { returnToFrom } from '../lib/returnTo';
 
 function Splash({ children, busy = false }: { children: ReactNode; busy?: boolean }) {
   return (
@@ -23,10 +24,10 @@ const retryButton =
 
 /**
  * Sends every signed-in user without a username to /onboarding (and users who have one away
- * from it). Waits for sign-in and /me; a failed /me shows Retry instead of redirecting.
+ * from it, back to the page they first asked for). Waits for sign-in and /me; a failed /me shows Retry instead of redirecting.
  */
 export function RouteGuard({ children }: { children: ReactNode }) {
-  const { pathname } = useLocation();
+  const { pathname, search, hash, state } = useLocation();
   const authStatus = useAuthStore((s) => s.status);
   const authError = useAuthStore((s) => s.error);
   const userId = useAuthStore((s) => s.userId);
@@ -70,7 +71,10 @@ export function RouteGuard({ children }: { children: ReactNode }) {
   }
 
   const onOnboarding = pathname === '/onboarding';
-  if (!me.me.username && !onOnboarding) return <Navigate to="/onboarding" replace />;
-  if (me.me.username && onOnboarding) return <Navigate to="/" replace />;
+  if (!me.me.username && !onOnboarding) {
+    return <Navigate to="/onboarding" replace state={{ returnTo: pathname + search + hash }} />;
+  }
+  // Also fires right after a claim, so it must agree with Onboarding about where to go.
+  if (me.me.username && onOnboarding) return <Navigate to={returnToFrom(state)} replace />;
   return <>{children}</>;
 }

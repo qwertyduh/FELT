@@ -1,5 +1,5 @@
 import { restartAuth } from './auth';
-import { createApiFetch, type RefreshResult } from './apiFetch';
+import { createApiFetch, type ApiCallOptions, type RefreshResult } from './apiFetch';
 import { getWebEnv } from './env';
 import { getSupabase } from './supabase';
 
@@ -13,7 +13,11 @@ function isTransient(err: { name?: string | undefined; status?: number | undefin
 let instance: ReturnType<typeof createApiFetch> | undefined;
 
 /** Authenticated call to the FELT server REST API. */
-export function apiFetch<T = unknown>(path: string, init?: RequestInit): Promise<T> {
+export function apiFetch<T = unknown>(
+  path: string,
+  init?: RequestInit,
+  options?: ApiCallOptions,
+): Promise<T> {
   instance ??= createApiFetch({
     baseUrl: getWebEnv().serverUrl,
     fetch: (...args) => fetch(...args),
@@ -31,5 +35,5 @@ export function apiFetch<T = unknown>(path: string, init?: RequestInit): Promise
       await restartAuth();
     },
   });
-  return instance<T>(path, init);
+  return instance<T>(path, init, options);
 }
