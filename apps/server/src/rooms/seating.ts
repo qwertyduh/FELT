@@ -127,7 +127,13 @@ export function setSittingOut(
   if (mine.sittingOut === sittingOut) return done(room);
   // A leaving seat is already sitting out; it cannot be brought back.
   if (mine.leaving) return refuse(room, 'forbidden', 'you are leaving the table');
-  return done({ ...room, seats: room.seats.map((s) => (s === mine ? { ...s, sittingOut } : s)) });
+  // Choosing either way is a sign of life: the run of timeouts starts again.
+  const { timeouts, ...seat } = mine;
+  void timeouts;
+  return done({
+    ...room,
+    seats: room.seats.map((s) => (s === mine ? { ...seat, sittingOut } : s)),
+  });
 }
 
 /** Frees the seat; the stack leaves the table on the ledger. Admission is unaffected. */

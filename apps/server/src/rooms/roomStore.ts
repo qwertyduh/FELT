@@ -96,6 +96,8 @@ export const RoomRecordSchema = z
           username: z.string().min(1).max(20),
           stack: z.number().int().min(0),
           sittingOut: z.boolean(),
+          /** Turns in a row the clock ran out on (P48); absent means none. */
+          timeouts: z.number().int().min(0).optional(),
           /** Left during a hand their cards are still live in; cashed out when it ends. */
           leaving: z.boolean().optional(),
         })

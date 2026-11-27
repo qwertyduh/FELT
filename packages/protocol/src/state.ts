@@ -174,7 +174,7 @@ export const PublicHandSchema = z
     button: SeatIndexSchema,
     smallBlindSeat: SeatIndexSchema,
     bigBlindSeat: SeatIndexSchema,
-    /** Absolute deadline (epoch ms) of the current turn; null when no timer. */
+    /** Absolute deadline (epoch ms) of the current turn; null when no timer, nobody on turn or paused. */
     turnDeadline: EpochMsSchema.nullable(),
     /** Hybrid: betting is complete and the host must advance the street / award. */
     awaitingHost: z.boolean(),

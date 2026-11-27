@@ -1,7 +1,7 @@
 /**
  * Hand lifecycle (P33): `host:start`, `game:act`, `host:advance_street`, `host:award`,
  * `host:dispute`, `host:undo`, `host:adjust_stack` (P42), `host:force_fold` (P45), `hand:show`
- * (P47), the deadlines stored in the room, `hand:private` and `hand:result`. The rules (game.ts)
+ * (P47), `turn:start` and turn expiry (P48), the deadlines stored in the room, `hand:private` and `hand:result`. The rules (game.ts)
  * run inside the room's actor queue; this file only wires sockets and timers to them.
  */
 import { randomUUID } from 'node:crypto';
@@ -57,6 +57,21 @@ const realTimers: Timers = {
 const notFound = () => errorAck('not_found', 'room not found');
 
 type Rule = (room: Readonly<RoomRecord>, userId: string, ctx: GameContext) => GameResult;
+
+/** The turn being waited on, if the game is running, and what tells it apart from any other. */
+function turnOf(
+  room: Readonly<RoomRecord>,
+): { key: string; payload: ServerEventPayload<'turn:start'> } | null {
+  const hand = room.game?.hand;
+  if (room.status !== 'playing' || !hand || hand.state.street === 'ended') return null;
+  const player = hand.state.players.find((p) => p.seat === hand.state.currentActor);
+  if (!player) return null;
+  const deadline = hand.turnDeadline ?? null;
+  return {
+    key: `${hand.handId}|${hand.state.street}|${player.playerId}|${deadline}`,
+    payload: { userId: player.playerId, deadline },
+  };
+}
 
 /** The `hand:result` payload, if this change ended a hand. */
 function handResult(
@@ -162,6 +177,11 @@ export class GameService {
         if (own) this.io.to(memberChannel(room.code, playerId)).emit('hand:private', own);
       }
     }
+    // After the state and the cards: a new turn, or the same one with a new deadline (resume).
+    const turn = turnOf(room);
+    if (turn && turn.key !== turnOf(before)?.key) {
+      this.io.to(roomChannel(room.code)).emit('turn:start', turn.payload);
+    }
     const result = handResult(room, before);
     if (result) this.io.to(roomChannel(room.code)).emit('hand:result', result);
   }
@@ -233,6 +253,8 @@ export class GameService {
       this.arm(code, nextDeadline(actor.state()), MIN_REARM_MS);
     } catch (err) {
       if (err instanceof RoomGoneError) return;
+      // A commit or reload meanwhile (e.g. after a save conflict) has armed the right timer.
+      if (this.armed.has(code)) return;
       this.arm(code, this.timers.now() + DEADLINE_RETRY_MS); // e.g. Redis down: try again
     }
   }

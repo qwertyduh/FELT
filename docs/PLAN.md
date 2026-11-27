@@ -379,10 +379,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests show each socket receives only its own cards and the privacy test from P32 still passes with real decks.
 - _Note: GO (Opus tester: no card leak found). Online dealing in rooms/{game,gameService,reveal}.ts; new hand:show event; room:state.hand.outcome carries reveals and awards. Undo and stack adjust are refused online. Owner to confirm: an all-in on the river reveals only winners (all-ins with cards still to come turn every contesting hand up); hand:show works while paused and adds up to 3s before the next deal; ending the game mid-hand online lets a host who saw their cards take back a bad hand. Open: until P48 a disconnected player on turn stalls an online hand. Web and server deploy together (protocol 4)._
 
-### ⬜ P48 · Turn timer
+### ✅ P48 · Turn timer
 - **Needs:** P47
 - **Do:** Deadlines stored in state, `turn:start`, expiry as a queued action (auto check/fold), and sitting a player out after two consecutive timeouts. Survives a restart.
 - **Done when:** fake-timer tests cover each case, including a restart mid-turn.
+- _Note: GO. Turn clock in rooms/turnClock.ts; expiry is a queued actor task; works in hybrid when the host sets a timer; wire format unchanged. Owner to confirm: a deadline that passed while the server was down applies as soon as anyone reconnects and counts as a strike (the player may not be back yet); resume gives at least 5s, so a pausing host can stretch their own clock; strikes carry across hands. Open: undoing a timeout also lifts a sit-out chosen afterwards; sit_in while seated does not clear strikes; after the clock sits out all but one player the host must press Start again._
 
 ### ⬜ P49 · Web: cards, timer ring, your-turn signal
 - **Needs:** P47, P40

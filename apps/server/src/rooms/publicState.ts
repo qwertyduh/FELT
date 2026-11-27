@@ -99,7 +99,8 @@ export function liveHandOf(room: Readonly<RoomRecord>): LiveHand | null {
     handId: hand.handId,
     turnSeq: hand.turnSeq,
     state: hand.state,
-    turnDeadline: null, // P48
+    // No countdown while paused; what was left is kept and not sent.
+    turnDeadline: room.status === 'playing' ? (hand.turnDeadline ?? null) : null,
     departed: hand.departed,
     runoutFrom: hand.runoutFrom,
     shown: hand.shown,

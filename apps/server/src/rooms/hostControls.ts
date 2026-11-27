@@ -16,6 +16,7 @@ import { freezeClock, restartClock, thawClock } from './blinds';
 import { leave, NEXT_HAND_DELAY_MS, nextHandDelay, running } from './game';
 import type { GameHand } from './gameSchema';
 import type { RoomRecord } from './roomStore';
+import { freezeTurn, thawTurn } from './turnClock';
 import { vacate, type SeatResult } from './seating';
 import { dropTopUps } from './topUps';
 
@@ -38,8 +39,8 @@ function gate(room: Readonly<RoomRecord>, userId: string): SeatResult | null {
 }
 
 /**
- * `host:pause`. The stored deadlines (award window, next hand) stay as they are but are ignored
- * while paused (`nextDeadline`), also after a restart. Every move, deal, award, dispute, undo,
+ * `host:pause`. What is left of the turn clock is kept. The other stored deadlines (award window,
+ * next hand) stay as they are but are ignored while paused (`nextDeadline`), also after a restart. Every move, deal, award, dispute, undo,
  * stack correction and start is refused with `room_paused`. Seats, join requests, top-ups and the
  * other host controls go on working.
  */
@@ -48,12 +49,19 @@ export function pause(room: Readonly<RoomRecord>, userId: string, now: number): 
   if (gated) return gated;
   if (room.status === 'paused') return done(room);
   if (room.status !== 'playing') return refuse(room, 'illegal_action', 'the game has not started');
-  return done({ ...freezeClock(room, now), status: 'paused' });
+  const { game } = room;
+  return done({
+    ...freezeClock(room, now),
+    status: 'paused',
+    ...(game?.hand ? { game: { ...game, hand: freezeTurn(game.hand, now) } } : {}),
+  });
 }
 
 /**
- * `host:resume`. The blind countdown goes on with what was left. A waiting deadline starts again in full from now, so nobody loses part of their
- * time to dispute, and a deadline that passed during the pause does not fire at once.
+ * `host:resume`. The blind countdown and the turn clock go on with what was left (the turn gets at
+ * least a few seconds). The award window and the next deal start again in full from now, so nobody
+ * loses part of their time to dispute, and a deadline that passed during the pause does not fire at
+ * once.
  */
 export function resume(room: Readonly<RoomRecord>, userId: string, now: number): SeatResult {
   const gated = gate(room, userId);
@@ -67,7 +75,8 @@ export function resume(room: Readonly<RoomRecord>, userId: string, now: number):
   };
   const { game } = room;
   if (!game) return done(next);
-  const proposal = game.hand?.proposal;
+  const hand = game.hand && thawTurn(next, game.hand, now);
+  const proposal = hand?.proposal;
   return done({
     ...next,
     game: {
@@ -77,9 +86,9 @@ export function resume(room: Readonly<RoomRecord>, userId: string, now: number):
           ? null
           : now + (game.hand ? nextHandDelay(game.hand) : NEXT_HAND_DELAY_MS),
       hand:
-        game.hand && proposal && !proposal.disputed
-          ? { ...game.hand, proposal: { ...proposal, confirmAt: now + AWARD_CONFIRM_MS } }
-          : game.hand,
+        hand && proposal && !proposal.disputed
+          ? { ...hand, proposal: { ...proposal, confirmAt: now + AWARD_CONFIRM_MS } }
+          : hand,
     },
   });
 }

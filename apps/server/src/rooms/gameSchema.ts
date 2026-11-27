@@ -44,6 +44,8 @@ export const UNDO_DEPTH = 10;
  */
 const UndoEntrySchema = z.strictObject({
   move: z.strictObject({ action: UndoActionSchema, userId: Id.nullable() }),
+  /** The move was made by the turn clock: the player's seat as it was before (P48). */
+  timeout: z.strictObject({ strikes: z.number().int().min(0), satOut: z.boolean() }).optional(),
   street: z.enum(STREETS),
   board: z.array(CardSchema).max(5),
   players: z.array(z.strictObject(PlayerMoney)),
@@ -120,6 +122,10 @@ export const GameSchema = z.strictObject({
       /** Dealt-in players who gave up their seat during this hand. */
       departed: z.array(Id),
       proposal: ProposalSchema.nullable(),
+      /** Absolute epoch ms at which the turn runs out (turnClock.ts); absent without a clock. */
+      turnDeadline: z.number().int().min(0).optional(),
+      /** While paused: what was left of the turn. */
+      turnLeftMs: z.number().int().min(0).optional(),
       /** Oldest first. Absent or empty: nothing can be undone. */
       undo: z.array(UndoEntrySchema).max(UNDO_DEPTH).optional(),
       /** Online: board cards face up when an all-in run-out began; absent if there was none. */

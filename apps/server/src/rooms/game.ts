@@ -11,8 +11,12 @@
  * Chips: after every engine step each dealt-in player's seat holds their engine stack, so at all
  * times `buy-ins - cash-outs = seat stacks + chips in the pot`.
  *
- * Time: deadlines (`proposal.confirmAt`, `nextHandAt`) are absolute and stored in the room.
- * `tick` applies whatever is due; it is safe to call at any moment and any number of times.
+ * Time: deadlines (`turnDeadline`, `proposal.confirmAt`, `nextHandAt`) are absolute and stored in
+ * the room. `tick` applies whatever is due; it is safe to call at any moment and any number of
+ * times.
+ *
+ * Turn clock (P48, turnClock.ts): every new turn gets a full clock. When it runs out the player
+ * checks if they can and folds if not; twice in a row sits them out from the next hand.
  */
 import { randomInt } from 'node:crypto';
 import {
@@ -22,6 +26,7 @@ import {
   createDeck,
   foldOut,
   leaveOutlook,
+  legalActions,
   shuffle,
   startHand,
   type EngineError,
@@ -45,6 +50,7 @@ import { shownHands } from './reveal';
 import type { RoomRecord } from './roomStore';
 import { leaveSeat, vacate, type SeatResult } from './seating';
 import { applyTopUps, dropTopUps } from './topUps';
+import { TIMEOUTS_TO_SIT_OUT, freshClock, onTheClock } from './turnClock';
 
 export const NEXT_HAND_DELAY_MS = 5_000;
 /** Online, after a showdown: time to read the hands before the next deal. */
@@ -154,9 +160,14 @@ function finishHand(room: Readonly<RoomRecord>, now: number): RoomRecord {
   return next;
 }
 
-function snapshot(state: HandState, move: UndoEntry['move']): UndoEntry {
+function snapshot(
+  state: HandState,
+  move: UndoEntry['move'],
+  timeout?: UndoEntry['timeout'],
+): UndoEntry {
   return {
     move,
+    ...(timeout ? { timeout } : {}),
     street: state.street,
     board: [...state.board],
     players: state.players.map(({ stack, bet, committed, status, hasActed, facedBet }) => ({
@@ -177,8 +188,9 @@ function snapshot(state: HandState, move: UndoEntry['move']): UndoEntry {
 
 /** The hand as it was at `entry`; who is in it, their seats and the blinds never change. */
 function restore(state: HandState, entry: UndoEntry): HandState {
-  const { move, players, raises, ...table } = entry;
+  const { move, timeout, players, raises, ...table } = entry;
   void move;
+  void timeout;
   const { raises: later, ...rest } = state;
   void later;
   return {
@@ -214,12 +226,19 @@ function logged(room: Readonly<RoomRecord>, entry: NewLogEntry): RoomRecord {
  * `move` makes the step undoable. A step without one (someone leaving), or one that paid out to a
  * player who had left, empties the history instead: an undo must never go back past a departure,
  * or it would bring the player back or take back chips already cashed out.
+ *
+ * The player now on turn gets a full clock, except that somebody else leaving does not give the
+ * same turn more time.
  */
 function advanceTo(
   room: Readonly<RoomRecord>,
   state: HandState,
   now: number,
-  { leaver, move }: { leaver?: string; move?: UndoEntry['move'] } = {},
+  {
+    leaver,
+    move,
+    timeout,
+  }: { leaver?: string; move?: UndoEntry['move']; timeout?: UndoEntry['timeout'] } = {},
 ): RoomRecord {
   const before = room.game!.hand!;
   let hand: GameHand = {
@@ -228,6 +247,11 @@ function advanceTo(
     turnSeq: (before.turnSeq ?? 0) + 1,
     ...runout(before.state.board.length, state),
   };
+  const sameTurn =
+    leaver !== undefined &&
+    state.street === before.state.street &&
+    state.currentActor === before.state.currentActor;
+  if (!sameTurn) hand = freshClock(room, hand, now);
   let next: RoomRecord = { ...room, seats: syncStacks(room, hand) };
   if (leaver !== undefined) {
     next = leaveSeat(next, leaver, now).room;
@@ -248,7 +272,7 @@ function advanceTo(
   }
   const undo =
     move && !paidOut && room.settings.mode === 'hybrid'
-      ? [...(before.undo ?? []), snapshot(before.state, move)].slice(-UNDO_DEPTH)
+      ? [...(before.undo ?? []), snapshot(before.state, move, timeout)].slice(-UNDO_DEPTH)
       : [];
   next = { ...next, game: { ...room.game!, hand: { ...hand, undo } } };
   return state.street === 'ended' ? finishHand(next, now) : next;
@@ -278,37 +302,81 @@ function deal(before: Readonly<RoomRecord>, ctx: GameContext): Result<RoomRecord
     if (!ran.ok) return ran;
     state = ran.value.state;
   }
-  const hand: GameHand = {
-    handId: ctx.newId(),
-    turnSeq: 0,
-    state,
-    departed: [],
-    proposal: null,
-    ...runout(0, state),
-  };
+  const playing: RoomRecord = { ...room, status: 'playing' };
+  const hand = freshClock(
+    playing,
+    {
+      handId: ctx.newId(),
+      turnSeq: 0,
+      state,
+      departed: [],
+      proposal: null,
+      ...runout(0, state),
+    },
+    ctx.now,
+  );
   let next: RoomRecord = {
-    ...room,
-    status: 'playing',
+    ...playing,
     game: { button: state.button, hand, nextHandAt: null },
   };
   next = { ...next, seats: syncStacks(next, hand) };
   return { ok: true, value: state.street === 'ended' ? finishHand(next, ctx.now) : next };
 }
 
-/** The earliest stored deadline, or null. */
+/**
+ * The earliest stored deadline, or null. A turn that should be timed and has no clock (a hand
+ * stored before there was one) is due at once, to be given one.
+ */
 export function nextDeadline(room: Readonly<RoomRecord>): number | null {
   if (room.status !== 'playing' || !room.game) return null;
   const { hand, nextHandAt } = room.game;
+  if (hand && onTheClock(room, hand)) return hand.turnDeadline ?? 0;
   const confirm = hand?.proposal && !hand.proposal.disputed ? hand.proposal.confirmAt : null;
   const all = [confirm, nextHandAt].filter((t): t is number => t !== null);
   return all.length ? Math.min(...all) : null;
 }
 
-/** Apply the due deadline: confirm an undisputed award, or deal the next hand. */
+/**
+ * The turn has run out (PRD 5.4): check if that is free, otherwise fold. Counts against the player,
+ * and `TIMEOUTS_TO_SIT_OUT` in a row sit them out. Hybrid: the host can undo it like any move.
+ */
+function timeOut(room: Readonly<RoomRecord>, now: number): RoomRecord {
+  const hand = room.game!.hand!;
+  const me = hand.state.players.find((p) => p.seat === hand.state.currentActor)!;
+  const action = legalActions(hand.state)?.check ? 'check' : 'fold';
+  const r = applyAction(hand.state, { type: action, playerId: me.playerId });
+  if (!r.ok) {
+    // Not expected of a player on turn. Give the turn again rather than retry without end.
+    return { ...room, game: { ...room.game!, hand: freshClock(room, hand, now) } };
+  }
+  const seat = room.seats.find((s) => s.userId === me.playerId)!;
+  const strikes = seat.timeouts ?? 0;
+  const satOut = !seat.sittingOut && strikes + 1 >= TIMEOUTS_TO_SIT_OUT;
+  const struck: RoomRecord = {
+    ...room,
+    seats: room.seats.map((s) =>
+      s === seat ? { ...s, timeouts: strikes + 1, sittingOut: s.sittingOut || satOut } : s,
+    ),
+  };
+  return advanceTo(struck, r.value.state, now, {
+    move: { action, userId: me.playerId },
+    timeout: { strikes, satOut },
+  });
+}
+
+/**
+ * Apply the due deadline: run out the turn (or start a missing clock), confirm an undisputed award,
+ * or deal the next hand. Whatever is due is read from the room as it is now, so a timer set for an
+ * earlier turn does nothing to a later one.
+ */
 export function tick(room: Readonly<RoomRecord>, ctx: GameContext): RoomRecord {
   const due = nextDeadline(room);
   if (due === null || due > ctx.now) return room as RoomRecord;
   const game = room.game!;
+  if (game.hand && onTheClock(room, game.hand)) {
+    if (game.hand.turnDeadline !== undefined) return timeOut(room, ctx.now);
+    return { ...room, game: { ...game, hand: freshClock(room, game.hand, ctx.now) } };
+  }
   const proposal = game.hand?.proposal;
   if (proposal && !proposal.disputed) {
     let state = game.hand!.state;
@@ -397,7 +465,17 @@ export function act(
   if (!r.ok) return engineRefusal(room, r.error);
   const was = found.hand.state;
   const now = r.value.state;
-  let next = advanceTo(room, now, ctx.now, { move });
+  // Acting in time ends any run of timeouts.
+  const heard: RoomRecord = {
+    ...room,
+    seats: room.seats.map((s) => {
+      if (s.userId !== userId || s.timeouts === undefined) return s;
+      const { timeouts, ...seat } = s;
+      void timeouts;
+      return seat;
+    }),
+  };
+  let next = advanceTo(heard, now, ctx.now, { move });
   if (now.mode === 'online' && was.street === 'river' && now.currentBet > was.currentBet) {
     // A raise leaves the betting open, so the hand is still the one in `next`.
     const hand = { ...next.game!.hand!, aggressor: userId };
@@ -555,16 +633,28 @@ export function undo(
   ) {
     return refuse(room, 'invalid_state', 'that step can no longer be undone');
   }
-  const restored: GameHand = {
-    ...hand,
-    state,
-    turnSeq: (hand.turnSeq ?? 0) + 1,
-    proposal: null,
-    undo: hand.undo!.slice(0, -1),
-  };
+  // Whoever is on turn again gets a full clock.
+  const restored: GameHand = freshClock(
+    room,
+    {
+      ...hand,
+      state,
+      turnSeq: (hand.turnSeq ?? 0) + 1,
+      proposal: null,
+      undo: hand.undo!.slice(0, -1),
+    },
+    ctx.now,
+  );
+  // Taking back a timeout takes back its strike, and the sitting out it caused.
+  const { timeout } = entry;
+  const seats = syncStacks(room, restored).map((s) =>
+    timeout && s.userId === entry.move.userId && !s.leaving
+      ? { ...s, timeouts: timeout.strikes, sittingOut: timeout.satOut ? false : s.sittingOut }
+      : s,
+  );
   const next: RoomRecord = {
     ...room,
-    seats: syncStacks(room, restored),
+    seats,
     game: { ...room.game!, hand: restored },
   };
   const mover = room.seats.find((s) => s.userId === entry.move.userId);

@@ -395,6 +395,7 @@ export const serverEventSchemas = {
   'room:state': PublicRoomStateSchema,
   'hand:private': PrivateHandSchema,
   'hand:result': HandResultPayloadSchema,
+  /** A new turn, or a new deadline for it (resume). `deadline` is null with the timer off. */
   'turn:start': z.object({ userId: UserIdSchema, deadline: EpochMsSchema.nullable() }).strict(),
   'chat:message': z
     .object({

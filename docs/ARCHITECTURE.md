@@ -135,6 +135,7 @@ Test priorities: side pots with 3+ all-ins, split pots, min-raise edge cases, he
 
 ### Room state (beyond the engine's HandState)
 - `settings`: mode, minBuyIn, maxBuyIn?, blinds, maxSeats, timer, blindIncrease (minutes or off, multiplier)
+- Turn clock (`rooms/turnClock.ts`): `hand.turnDeadline` (absolute epoch ms) while the room has a timer and somebody is on turn; `turnLeftMs` while paused. Each new turn gets a full clock (another player leaving does not extend the current one). On expiry the player checks if free, else folds, as a queued actor task that reads the deadline as it is then, so a stale timer does nothing. An intent arriving after the deadline loses to it. `seats[].timeouts` counts turns run out in a row: two sit the player out from the next hand; acting in time, `room:sit_out` or `room:sit_in` clears it. Hybrid: a timeout can be undone (with its strike and sit-out). A deadline that passed while the server was down applies once, when the room is next loaded
 - `blindClock`: absolute deadline of the next blind increase (frozen while paused). It needs no timer: the next hand dealt after it takes one level (rounded up, capped at the chip maximum) and starts a full countdown
 - `hostId`
 - `admitted`: set of userIds allowed in this session
@@ -247,7 +248,7 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | `player:topup_request` | `{ amount }` | Seated player (the host too); one outstanding per player; `stack + amount ≤ maxBuyIn`, checked again at approval and when applied |
 | `host:admit` | `{ requestId, approve }` | Host |
 | `host:topup` | `{ requestId, approve }` | Host |
-| `host:start` / `host:pause` / `host:resume` / `host:end` | — | Host. While paused, moves, deals, awards, disputes, undo, stack fixes and start are refused (`room_paused`); resume restarts any waiting deadline in full. End cancels a running hand (everyone gets back what they put in) and drops all requests and queued top-ups |
+| `host:start` / `host:pause` / `host:resume` / `host:end` | — | Host. While paused, moves, deals, awards, disputes, undo, stack fixes and start are refused (`room_paused`); resume keeps what was left of the turn (at least 5s, or the whole timer if shorter) and restarts the other waiting deadlines in full. End cancels a running hand (everyone gets back what they put in) and drops all requests and queued top-ups |
 | `host:settings` | `{ smallBlind, bigBlind }` (applied next hand; restarts the blind increase countdown) | Host |
 | `host:blind_increase` | `{ minutes, multiplier }` (`minutes` 1–240 or null = off; multiplier 1.5 or 2) | Host |
 | `host:kick` | `{ userId }`. Does what `room:leave` does, then removes admission | Host |
@@ -288,7 +289,7 @@ Web and server deploy separately and open tabs keep old bundles.
 | `room:state` | Full public room + hand state, `version` number | Admitted players |
 | `hand:private` | `{ handId, holeCards }` | One player's own sockets (online mode) |
 | `hand:result` | Pots, winners, revealed hands | Room |
-| `turn:start` | `{ userId, deadline }` | Room |
+| `turn:start` | `{ userId, deadline }` (`deadline` null with the timer off). Sent on each new turn and on resume; `room:state.hand.turnDeadline` is the same value (null while paused) and is what a reconnecting client uses | Room |
 | `chat:message` / `chat:reaction` | Message | Room |
 | `session:recap` | Recap + settle-up | Room |
 | `error` | `{ code, message }` | One socket |
