@@ -1,14 +1,17 @@
 import { z } from 'zod';
 import {
+  ADJUST_REASON_MAX,
   CardSchema,
   ChipsByUserSchema,
   EpochMsSchema,
   IdSchema,
   MAX_SEATS,
+  ROOM_LOG_LIMIT,
   SeatIndexSchema,
   StreetSchema,
   TableChipsSchema,
   TurnSeqSchema,
+  UndoActionSchema,
   UserIdSchema,
 } from './common';
 import { RoomCodeSchema, RoomSettingsSchema, RoomStatusSchema } from './rooms';
@@ -90,6 +93,19 @@ export const PublicHandSchema = z
     street: StreetSchema,
     board: z.array(CardSchema).max(5),
     pots: z.array(PublicPotSchema).max(MAX_SEATS),
+    /**
+     * This street's bets of players who have since left their seat: part of the pot, but on no
+     * seat in `seats`.
+     */
+    departedBet: TableChipsSchema,
+    /**
+     * Hybrid: what `host:undo` would take back now (`userId` is null for a deal), or null. Only
+     * that one step: the history itself never leaves the server.
+     */
+    undo: z
+      .object({ action: UndoActionSchema, userId: UserIdSchema.nullable() })
+      .strict()
+      .nullable(),
     /** Highest street bet to match. */
     currentBet: TableChipsSchema,
     /** Min-raise increment (last full raise). */
@@ -107,6 +123,38 @@ export const PublicHandSchema = z
   })
   .strict();
 export type PublicHand = z.infer<typeof PublicHandSchema>;
+
+const logBase = { id: z.number().int().min(1), at: EpochMsSchema };
+
+/**
+ * The room log every admitted player may read: the host's corrections. `street` is the one the
+ * undone step was taken on (for a deal, the street that was dealt).
+ */
+export const RoomLogEntrySchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      ...logBase,
+      kind: z.literal('undo'),
+      action: UndoActionSchema,
+      /** Whose move was taken back; null for a deal. */
+      username: PublicNameSchema.nullable(),
+      street: StreetSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...logBase,
+      kind: z.literal('adjust'),
+      username: PublicNameSchema,
+      /** Signed change. */
+      amount: z.number().int(),
+      /** The stack after it. */
+      stack: TableChipsSchema,
+      reason: z.string().min(1).max(ADJUST_REASON_MAX),
+    })
+    .strict(),
+]);
+export type RoomLogEntry = z.infer<typeof RoomLogEntrySchema>;
 
 export const PublicRoomStateSchema = z
   .object({
@@ -127,6 +175,8 @@ export const PublicRoomStateSchema = z
     /** Absolute epoch ms of the next blind increase; null when off. */
     nextBlindIncreaseAt: EpochMsSchema.nullable(),
     paused: z.boolean(),
+    /** Oldest first, the last `ROOM_LOG_LIMIT` entries. */
+    log: z.array(RoomLogEntrySchema).max(ROOM_LOG_LIMIT),
   })
   .strict();
 export type PublicRoomState = z.infer<typeof PublicRoomStateSchema>;

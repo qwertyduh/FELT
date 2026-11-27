@@ -1,6 +1,6 @@
 /**
  * Hand lifecycle (P33): `host:start`, `game:act`, `host:advance_street`, `host:award`,
- * `host:dispute`, the deadlines stored in the room, and `hand:result`. The rules (game.ts) run
+ * `host:dispute`, `host:undo`, `host:adjust_stack` (P42), the deadlines stored in the room, and `hand:result`. The rules (game.ts) run
  * inside the room's actor queue; this file only wires sockets and timers to them.
  */
 import { randomUUID } from 'node:crypto';
@@ -15,12 +15,14 @@ import {
 } from '../realtime/handlers';
 import {
   act,
+  adjustStack,
   advance,
   dispute,
   nextDeadline,
   proposeAward,
   start,
   tick,
+  undo,
   type GameContext,
   type GameResult,
 } from './game';
@@ -115,6 +117,18 @@ export class GameService {
       socket,
       'host:dispute',
       (p) => this.intent(socket, (room, userId) => dispute(room, userId, p)),
+      log,
+    );
+    onClientEvent(
+      socket,
+      'host:undo',
+      (p) => this.intent(socket, (room, userId, ctx) => undo(room, userId, p, ctx)),
+      log,
+    );
+    onClientEvent(
+      socket,
+      'host:adjust_stack',
+      (p) => this.intent(socket, (room, userId, ctx) => adjustStack(room, userId, p, ctx)),
       log,
     );
   };

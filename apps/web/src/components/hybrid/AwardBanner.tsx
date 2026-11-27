@@ -1,11 +1,12 @@
 /**
  * The proposed result, shown to every player while it can be disputed (PRD 5.5). The server pays
  * it when its time is up; the countdown here is only a display. Once disputed, nothing moves until
- * the host picks again, and the banner says so.
+ * the host picks again, and the banner says so. A disputed one can be put aside to look at the
+ * table.
  */
 import { useEffect, useState } from 'react';
 import { AWARD_CONFIRM_MS, type PublicHand, type PublicRoomState } from '@felt/protocol';
-import { SHEET, SOLID, type Tap } from '../../lib/actionUi';
+import { OUTLINE, SHEET, SOLID, type Tap } from '../../lib/actionUi';
 import { playerName } from '../../lib/hybrid';
 import { shortChips } from '../../lib/seating';
 import { potName } from '../../lib/table';
@@ -36,6 +37,7 @@ export function AwardBanner({
   notice,
   onDispute,
   onRepick,
+  onMinimise,
 }: {
   room: PublicRoomState;
   hand: PublicHand;
@@ -47,6 +49,7 @@ export function AwardBanner({
   notice: React.ReactNode;
   onDispute: () => void;
   onRepick: () => void;
+  onMinimise: () => void;
 }) {
   const hosting = room.hostId === userId;
   const disputed = hand.pendingAwards.some((a) => a.disputed);
@@ -99,12 +102,21 @@ export function AwardBanner({
         <p className="text-center text-sm text-cream/75 tabular-nums">Your stack {money(stack)}</p>
       )}
       {/* A steady last row, so the list does not drop when the button goes. */}
-      <div className="grid min-h-12 shrink-0">
+      <div className="grid min-h-12 shrink-0 grid-cols-3 gap-2">
+        {disputed && (
+          <button
+            type="button"
+            className={`${OUTLINE} ${action ? '' : 'col-span-3'}`}
+            onClick={onMinimise}
+          >
+            See table
+          </button>
+        )}
         {action && (
           <button
             key={`${action.id}:${turnKey}`}
             type="button"
-            className={SOLID}
+            className={`${SOLID} ${disputed ? 'col-span-2' : 'col-span-3'}`}
             {...tap(`${action.id}:${turnKey}`, action.run)}
           >
             {action.label}

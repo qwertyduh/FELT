@@ -327,10 +327,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** Playwright plays a hand including a side pot through to award.
 - _Note: GO. turnSeq now required on host:advance_street and host:award. An unseated host may dispute. Owner calls: recorded community cards are stored but shown nowhere; an award that expires while the server is down is paid on reload with no new window. Folded into P42: award winner names truncate (money choice), disputed banner covers the screen with no way to see the table, award sheet picks lost when a folded player leaves._
 
-### ⬜ P42 · Hybrid undo & stack adjust
+### ✅ P42 · Hybrid undo & stack adjust
 - **Needs:** P41
 - **Do:** Server: undo stack (last K states) and `host:adjust_stack` (ledger `adjust` entry with a reason). UI: an Undo button and an adjust-stack dialog, with both logged in a visible room log.
 - **Done when:** tests for undoing an action mid-street, undo being unavailable after a hand ends, and an adjustment appearing in the ledger; a Playwright test for undo.
+- _Note: GO (Opus tester). Undo keeps the last 10 moves and deals; the history is wiped by hand end, a dealt-in player leaving, and any stack correction to a dealt-in player. Owner to confirm: adjust refused while the target is live in the hand; a hand-ending move cannot be undone; adjust reason is free text with no profanity filter; adjusting to 0 then leaving counts as busted and blocks re-sit. P44 kick must empty the undo history. P43 must handle a busted leaver. P52 must count signed adjust lines. Web and server deploy together._
 
 ### ⬜ P43 · Top-ups (buy more)
 - **Needs:** P37, P33

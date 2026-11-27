@@ -5,6 +5,8 @@
  * winners and the proposed award open as sheets laid over what is above (`data-cover`), so the
  * request cards never move; they take no taps while covered.
  *
+ * In hybrid the host's bar has one more line, always there, with Undo and Fix stack (P42).
+ *
  * Money safety: a button takes no taps until it has been in place for `ACTION_ARM_MS` (new on
  * every change to the hand, and after a sheet opens or closes), a tap must begin on it, and every
  * send quotes the `turnSeq` it was made for and waits for its ack.
@@ -34,14 +36,20 @@ import { chips, shortChips } from '../lib/seating';
 import { potTotal, toCall } from '../lib/table';
 import { usePressGuard } from '../lib/usePressGuard';
 import { useStillCards } from '../lib/useStillCards';
+import { AdjustSheet } from './hybrid/AdjustSheet';
 import { AwardBanner } from './hybrid/AwardBanner';
 import { AwardSheet } from './hybrid/AwardSheet';
 import { CardSheet } from './hybrid/CardSheet';
+import { UndoSheet } from './hybrid/UndoSheet';
 
 export const ACTION_ARM_MS = 400;
 export const ACTION_NOTICE_MS = 4_000;
 
 const money = (n: number) => shortChips(n, 100_000_000);
+const TOOL =
+  'min-h-11 w-18 shrink-0 rounded-xl border border-felt-700 text-sm font-semibold text-brass active:brightness-90 disabled:text-cream/30';
+
+type SheetKind = 'size' | 'cards' | 'award' | 'undo' | 'adjust';
 
 function SizeSheet({
   raise,
@@ -179,13 +187,39 @@ export function ActionBar({
   const turnKey = hand ? `${hand.handId}:${hand.turnSeq}` : '';
   const owed = me ? toCall(hand, me) : null;
 
-  /** A sheet, opened for one state of the hand: any change to the hand closes it. */
-  const [sheet, setSheet] = useState<{ kind: 'size' | 'cards' | 'award'; key: string } | null>(
-    null,
-  );
-  const opened = sheet?.key === turnKey ? sheet.kind : null;
-  const show = (kind: 'size' | 'cards' | 'award') => setSheet({ kind, key: turnKey });
+  /**
+   * A sheet, opened for one state of the hand: any change to the hand closes it. Two differ: the
+   * winners stay up while the pots, who can win them and any proposal are unchanged (a folded
+   * player leaving must not lose the picks), and a stack correction is not tied to the hand.
+   */
+  const [sheet, setSheet] = useState<{ kind: SheetKind; key: string } | null>(null);
+  const awardKey = hand
+    ? `award:${hand.handId}:${hand.street}:${JSON.stringify([
+        hand.pots,
+        hand.pendingAwards.map((a) => [a.potId, a.winners, a.disputed]),
+      ])}`
+    : '';
+  const keyOf = (kind: SheetKind) =>
+    kind === 'award' ? awardKey : kind === 'adjust' ? 'adjust' : turnKey;
+  const opened = sheet && sheet.key === keyOf(sheet.kind) ? sheet.kind : null;
+  // Forgotten, not just hidden: pots can come round to the same again after an undo.
+  if (sheet && opened === null) setSheet(null);
+  const show = (kind: SheetKind) => setSheet({ kind, key: keyOf(kind) });
   const close = () => setSheet(null);
+  /** The state of the hand whose disputed result was put aside to see the table. */
+  const [aside, setAside] = useState<string | null>(null);
+
+  const tools = hosting && room.settings.mode === 'hybrid';
+  const disputed = Boolean(proposed) && hand!.pendingAwards.some((a) => a.disputed);
+  const minimised = disputed && aside === turnKey;
+  /** A pending award must be stopped before anything is undone (the server says the same). */
+  const canUndo =
+    tools &&
+    live &&
+    hand !== null &&
+    hand.street !== 'ended' &&
+    hand.undo !== null &&
+    (!proposed || disputed);
 
   /** The state of the hand already answered (or being answered): its buttons stay off. */
   const [sent, setSent] = useState<string | null>(null);
@@ -203,7 +237,8 @@ export function ActionBar({
     return () => clearTimeout(id);
   }, [notice]);
 
-  const active = turn !== null || step !== null || Boolean(proposed);
+  // A sheet's buttons are armed by the same check, also when nothing else is up.
+  const active = turn !== null || step !== null || Boolean(proposed) || opened !== null;
   const { list, held, isStill } = useStillCards<HTMLElement>(active, ACTION_ARM_MS);
   const guard = usePressGuard();
 
@@ -264,8 +299,11 @@ export function ActionBar({
   const call = turn?.options.call ?? null;
   const deal = step?.kind === 'deal' ? DEALS[step.street] : null;
   const picking = hosting && (step?.kind === 'award' || proposed) && opened === 'award';
+  const undoing = canUndo && opened === 'undo';
+  const adjusting = tools && live && opened === 'adjust';
+  const banner = proposed && !minimised && !picking && !undoing && !adjusting;
   /** A sheet is up: it says the refusal, so it is not said twice. */
-  const covered = sizing || (deal !== null && opened === 'cards') || picking || proposed;
+  const covered = sizing || (deal !== null && opened === 'cards') || picking || undoing || banner;
 
   function dealStreet(cards?: CardString[]) {
     if (!hand || step?.kind !== 'deal') return;
@@ -283,17 +321,53 @@ export function ActionBar({
       ref={list}
       aria-label="Actions"
       data-testid="action-bar"
-      className="relative flex h-18 shrink-0 flex-col pt-1"
+      className={`relative flex shrink-0 flex-col pt-1 ${tools ? 'h-24' : 'h-18'}`}
     >
       {/* The amount to call is never hidden: a refusal shares the line with it. */}
-      <p className="flex h-5 items-center justify-center gap-3 text-sm whitespace-nowrap">
-        {me && (
-          <span data-testid="my-call" className="shrink-0 text-cream tabular-nums">
-            To call {owed === null ? '–' : money(owed)}
-          </span>
+      <div className={tools ? 'flex h-11 items-center gap-2' : 'flex h-5 items-center'}>
+        {tools && (
+          <button
+            type="button"
+            className={TOOL}
+            disabled={!ready || !canUndo}
+            onClick={() => show('undo')}
+          >
+            Undo
+          </button>
         )}
-        {!covered && alert}
-      </p>
+        <p
+          className={`flex min-w-0 flex-1 items-center justify-center text-sm ${
+            tools ? 'flex-col text-center leading-tight' : 'gap-3 whitespace-nowrap'
+          }`}
+        >
+          {me && (
+            <span
+              data-testid="my-call"
+              className="shrink-0 whitespace-nowrap text-cream tabular-nums"
+            >
+              To call {owed === null ? '–' : money(owed)}
+            </span>
+          )}
+          {!covered &&
+            (tools && notice ? (
+              <span role="alert" className="line-clamp-2 text-xs leading-3 text-chip-red">
+                {notice.text}
+              </span>
+            ) : (
+              alert
+            ))}
+        </p>
+        {tools && (
+          <button
+            type="button"
+            className={TOOL}
+            disabled={!ready || !live}
+            onClick={() => show('adjust')}
+          >
+            Fix stack
+          </button>
+        )}
+      </div>
       {turn && !sizing && (
         <div className="grid grid-cols-3 gap-2">
           {button('Fold', OUTLINE, () => act({ type: 'fold' }))}
@@ -353,7 +427,7 @@ export function ActionBar({
       )}
       {picking && hand && (
         <AwardSheet
-          key={turnKey}
+          key={awardKey}
           room={room}
           hand={hand}
           turnKey={turnKey}
@@ -366,7 +440,38 @@ export function ActionBar({
           }}
         />
       )}
-      {proposed && opened !== 'award' && (
+      {minimised && !banner && !picking && (
+        <div className={`grid gap-2 ${hosting ? 'grid-cols-3' : ''}`}>
+          {button('See result', OUTLINE, () => setAside(null), undefined, `result:${turnKey}`)}
+          {hosting &&
+            button(
+              'Pick winners again',
+              `${SOLID} col-span-2`,
+              () => show('award'),
+              undefined,
+              `again:${turnKey}`,
+            )}
+        </div>
+      )}
+      {undoing && hand && (
+        <UndoSheet
+          key={turnKey}
+          room={room}
+          hand={hand}
+          turnKey={turnKey}
+          tap={tap}
+          notice={sheetAlert}
+          onBack={close}
+          onUndo={() => {
+            const payload = { handId: hand.handId, turnSeq: hand.turnSeq };
+            void send('host:undo', () => client.emitWithAck('host:undo', payload));
+          }}
+        />
+      )}
+      {adjusting && (
+        <AdjustSheet room={room} tap={tap} ready={ready} client={client} onBack={close} />
+      )}
+      {banner && (
         <AwardBanner
           key={turnKey}
           room={room}
@@ -382,6 +487,7 @@ export function ActionBar({
             )
           }
           onRepick={() => show('award')}
+          onMinimise={() => setAside(turnKey)}
         />
       )}
     </section>

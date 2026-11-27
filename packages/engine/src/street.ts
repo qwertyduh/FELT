@@ -75,7 +75,8 @@ export function resetForStreet(
   street: Street,
   board: readonly Card[] = state.board,
 ): HandState {
-  const collected = collectBets(state);
+  const { raises, ...collected } = collectBets(state);
+  void raises; // a new street has no raises yet
   const next: HandState = {
     ...collected,
     street,

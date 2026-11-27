@@ -6,7 +6,7 @@
  * silently dropped on rehydrate.
  */
 import type { HandState } from '@felt/engine';
-import { CardSchema, STREETS } from '@felt/protocol';
+import { CardSchema, STREETS, UndoActionSchema } from '@felt/protocol';
 import { z } from 'zod';
 
 const Id = z.string().min(1).max(64);
@@ -22,6 +22,39 @@ const PotAward = z.strictObject({
   handNames: z.record(Id, z.string()),
 });
 
+const Pots = z.array(z.strictObject({ id: Id, amount: Chips, eligible: z.array(Id) }));
+const Raises = z.array(z.strictObject({ from: Chips, to: Chips, size: Chips, acted: z.array(Id) }));
+/** The parts of a player a betting step changes. */
+const PlayerMoney = {
+  stack: Chips,
+  bet: Chips,
+  committed: Chips,
+  status: z.enum(['active', 'folded', 'all_in']),
+  hasActed: z.boolean(),
+  facedBet: Chips,
+};
+
+/** How many steps back a hybrid hand can be undone. */
+export const UNDO_DEPTH = 10;
+
+/**
+ * What the hand looked like before one step: only what a step can change, so the history stays
+ * small. Hybrid only (no deck or hole cards). `turnSeq` is deliberately not part of it: an undo
+ * moves it forward like any other change. Never sent to clients.
+ */
+const UndoEntrySchema = z.strictObject({
+  move: z.strictObject({ action: UndoActionSchema, userId: Id.nullable() }),
+  street: z.enum(STREETS),
+  board: z.array(CardSchema).max(5),
+  players: z.array(z.strictObject(PlayerMoney)),
+  currentBet: Chips,
+  lastFullRaise: Chips,
+  raises: Raises.optional(),
+  currentActor: Seat.nullable(),
+  pots: Pots,
+});
+export type UndoEntry = z.infer<typeof UndoEntrySchema>;
+
 const HandStateShape = z.strictObject({
   mode: z.enum(['online', 'hybrid']),
   street: z.enum(STREETS),
@@ -30,12 +63,7 @@ const HandStateShape = z.strictObject({
     z.strictObject({
       playerId: Id,
       seat: Seat,
-      stack: Chips,
-      bet: Chips,
-      committed: Chips,
-      status: z.enum(['active', 'folded', 'all_in']),
-      hasActed: z.boolean(),
-      facedBet: Chips,
+      ...PlayerMoney,
       hole: z.tuple([Card, Card]).nullable(),
     }),
   ),
@@ -46,8 +74,9 @@ const HandStateShape = z.strictObject({
   bigBlind: Chips,
   currentBet: Chips,
   lastFullRaise: Chips,
+  raises: Raises.optional(),
   currentActor: Seat.nullable(),
-  pots: z.array(z.strictObject({ id: Id, amount: Chips, eligible: z.array(Id) })),
+  pots: Pots,
   deck: z.array(Card).nullable(),
   awardedPotIds: z.array(Id),
   pendingAwards: z.array(PotAward).optional(),
@@ -91,6 +120,8 @@ export const GameSchema = z.strictObject({
       /** Dealt-in players who gave up their seat during this hand. */
       departed: z.array(Id),
       proposal: ProposalSchema.nullable(),
+      /** Oldest first. Absent or empty: nothing can be undone. */
+      undo: z.array(UndoEntrySchema).max(UNDO_DEPTH).optional(),
     })
     .nullable(),
   /** Absolute epoch ms at which the next hand is dealt; null when none is scheduled. */

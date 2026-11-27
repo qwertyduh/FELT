@@ -1,13 +1,16 @@
 import { z } from 'zod';
 import {
+  ADJUST_REASON_MAX,
   CardSchema,
   ChipsSchema,
   EpochMsSchema,
   IdSchema,
+  MAX_CHIPS,
   MAX_SEATS,
   PositiveChipsSchema,
   SeatIndexSchema,
   TableChipsByUserSchema,
+  TableChipsSchema,
   TurnSeqSchema,
   UserIdSchema,
 } from './common';
@@ -164,18 +167,29 @@ export const clientEventSchemas = {
     })
     .strict(),
   'host:dispute': z.object({ handId }).strict(),
-  'host:undo': z.object({ handId }).strict(),
-  /** `amount` is a signed, non-zero delta. */
+  /** `turnSeq` as for `game:act`: a double or late send cannot undo a second step. */
+  'host:undo': z.object({ handId, turnSeq }).strict(),
+  /**
+   * `amount` is a signed, non-zero delta. `stack` is the stack the host was looking at: if it has
+   * changed (including by this same adjustment, sent twice) it is refused as `stale_hand`.
+   */
   'host:adjust_stack': z
     .object({
       userId: UserIdSchema,
       amount: z
         .number()
         .int()
-        .min(-1_000_000_000)
-        .max(1_000_000_000)
+        .min(-MAX_CHIPS)
+        .max(MAX_CHIPS)
         .refine((n) => n !== 0, { message: 'amount must be non-zero' }),
-      reason: z.string().trim().min(1).max(100),
+      stack: TableChipsSchema,
+      /** Shown to the whole table: no control or text-direction characters. */
+      reason: z
+        .string()
+        .trim()
+        .min(1)
+        .max(ADJUST_REASON_MAX)
+        .regex(/^[^\p{Cc}\u202A-\u202E\u2066-\u2069]*$/u, 'plain text only'),
     })
     .strict(),
   'chat:send': z.object({ text: z.string().trim().min(1).max(CHAT_MAX_LENGTH) }).strict(),

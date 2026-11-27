@@ -8,7 +8,7 @@ export const SOLID = `${BUTTON} bg-brass text-felt-950`;
 
 /** A panel laid over what is above the bar; its bottom row sits where the bar's buttons do. */
 export const SHEET =
-  'absolute -inset-x-2 bottom-0 z-10 flex max-h-[calc(100dvh-2rem)] flex-col gap-2 rounded-t-2xl border-t-2 border-brass-dim bg-felt-950 px-2 pt-2';
+  'absolute -inset-x-2 bottom-0 z-10 flex min-h-full max-h-[calc(100dvh-2rem)] flex-col gap-2 rounded-t-2xl border-t-2 border-brass-dim bg-felt-950 px-2 pt-2';
 
 /** Props that make a button guarded: held until still, and the press must begin on it. */
 export type Tap = (

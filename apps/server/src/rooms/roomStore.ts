@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import {
+  ROOM_LOG_LIMIT,
   RoomCodeSchema,
+  RoomLogEntrySchema,
   RoomSettingsSchema,
   RoomStatusSchema,
   type RoomCode,
@@ -65,12 +67,15 @@ export const RoomRecordSchema = z
           t: z.number().int(),
           userId: UserId,
           kind: z.enum(LEDGER_KINDS),
-          /** A `cash_out` is 0 when the player left busted. */
-          amount: z.number().int().min(0),
+          /** Signed for an `adjust`. A `cash_out` is 0 when the player left busted. */
+          amount: z.number().int(),
           note: z.string().max(100).optional(),
         })
-        .strict(),
+        .strict()
+        .refine((e) => e.kind === 'adjust' || e.amount >= 0, 'only an adjust may be negative'),
     ),
+    /** The public room log (host corrections), oldest first. */
+    log: z.array(RoomLogEntrySchema).max(ROOM_LOG_LIMIT).optional(),
     /** Absent until the host first starts the game. */
     game: GameSchema.optional(),
   })

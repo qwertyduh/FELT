@@ -3,8 +3,8 @@
  * field (an allow-list). Never spread a room, seat, hand or player object: that is how hole cards,
  * the deck, the ledger or join requests would leak.
  */
-import { legalActions, type HandState } from '@felt/engine';
-import type { PublicHand, PublicRoomState, PublicSeat } from '@felt/protocol';
+import { legalActions, potsOnShow, type HandState } from '@felt/engine';
+import type { PublicHand, PublicRoomState, PublicSeat, RoomLogEntry } from '@felt/protocol';
 import type { RoomRecord } from './roomStore';
 
 /** A running hand as the server holds it: the engine state plus what the engine does not track. */
@@ -18,6 +18,8 @@ export interface LiveHand {
   proposedAwards?: PublicHand['pendingAwards'];
   /** Dealt-in players who gave up their seat: they are not matched to any seat. */
   departed?: readonly string[];
+  /** The one step an undo would take back (never the history). */
+  undo?: PublicHand['undo'];
 }
 
 function toPublicOptions(state: HandState): PublicHand['options'] {
@@ -39,7 +41,15 @@ function toPublicHand(live: LiveHand): PublicHand {
     options: toPublicOptions(state),
     street: state.street,
     board: [...state.board],
-    pots: state.pots.map((p) => ({ id: p.id, amount: p.amount, eligible: [...p.eligible] })),
+    pots: potsOnShow(state).map((p) => ({
+      id: p.id,
+      amount: p.amount,
+      eligible: [...p.eligible],
+    })),
+    departedBet: state.players
+      .filter((p) => live.departed?.includes(p.playerId))
+      .reduce((sum, p) => sum + p.bet, 0),
+    undo: live.undo ? { action: live.undo.action, userId: live.undo.userId } : null,
     currentBet: state.currentBet,
     lastFullRaise: state.lastFullRaise,
     currentActor: state.currentActor,
@@ -63,12 +73,14 @@ export function liveHandOf(room: Readonly<RoomRecord>): LiveHand | null {
   const hand = room.game?.hand;
   if (!hand) return null;
   const { proposal } = hand;
+  const last = hand.undo?.at(-1)?.move;
   return {
     handId: hand.handId,
     turnSeq: hand.turnSeq,
     state: hand.state,
     turnDeadline: null, // P48
     departed: hand.departed,
+    undo: last ? { action: last.action, userId: last.userId } : null,
     ...(proposal
       ? {
           proposedAwards: proposal.awards.map((a) => ({
@@ -80,6 +92,16 @@ export function liveHandOf(room: Readonly<RoomRecord>): LiveHand | null {
         }
       : {}),
   };
+}
+
+function toPublicLogEntry(e: RoomLogEntry): RoomLogEntry {
+  const { id, at } = e;
+  if (e.kind === 'undo') {
+    const { action, username, street } = e;
+    return { id, at, kind: 'undo', action, username, street };
+  }
+  const { username, amount, stack, reason } = e;
+  return { id, at, kind: 'adjust', username, amount, stack, reason };
 }
 
 export function toPublicState(
@@ -129,5 +151,6 @@ export function toPublicState(
     pendingTopUps: {}, // P43
     nextBlindIncreaseAt: null, // not scheduled yet
     paused: room.status === 'paused',
+    log: (room.log ?? []).map(toPublicLogEntry),
   };
 }

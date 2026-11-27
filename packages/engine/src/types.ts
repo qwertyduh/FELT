@@ -71,6 +71,17 @@ export interface Pot {
   eligible: readonly string[];
 }
 
+/** A full bet or raise made this street, kept so it can be taken back if its maker leaves. */
+export interface FullRaise {
+  /** The bet to match before it, and after it. */
+  from: number;
+  to: number;
+  /** `lastFullRaise` before it. */
+  size: number;
+  /** playerIds who had already acted and were reopened by it. */
+  acted: readonly string[];
+}
+
 export interface HandState {
   mode: GameMode;
   street: Street;
@@ -87,6 +98,8 @@ export interface HandState {
   currentBet: number;
   /** Size of the last FULL raise this street (min-raise increment); starts at bigBlind. */
   lastFullRaise: number;
+  /** This street's full raises, oldest first (absent = none). Only `foldOut` reads it. */
+  raises?: readonly FullRaise[];
   /** Seat to act, or null when no one can act (between streets, all-in runout, ended). */
   currentActor: number | null;
   /** Pots collected from completed streets. Chips still in `bet` are not yet in a pot. */

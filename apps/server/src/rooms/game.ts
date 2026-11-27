@@ -21,8 +21,15 @@ import {
   type Result,
   type Transition,
 } from '@felt/engine';
-import { AWARD_CONFIRM_MS, type ClientEventPayload, type ErrorCode } from '@felt/protocol';
-import type { Game, GameHand } from './gameSchema';
+import {
+  AWARD_CONFIRM_MS,
+  MAX_CHIPS,
+  ROOM_LOG_LIMIT,
+  type ClientEventPayload,
+  type ErrorCode,
+  type RoomLogEntry,
+} from '@felt/protocol';
+import { UNDO_DEPTH, type Game, type GameHand, type UndoEntry } from './gameSchema';
 import type { RoomRecord } from './roomStore';
 import { leaveSeat, type SeatResult } from './seating';
 
@@ -89,12 +96,67 @@ function finishHand(room: Readonly<RoomRecord>, now: number): RoomRecord {
   let next: RoomRecord = {
     ...room,
     ledger: [...room.ledger, ...lines],
-    game: { ...game, hand: { ...hand, proposal: null }, nextHandAt: now + NEXT_HAND_DELAY_MS },
+    // A hand that has ended is final: nothing of it can be undone.
+    game: {
+      ...game,
+      hand: { ...hand, proposal: null, undo: [] },
+      nextHandAt: now + NEXT_HAND_DELAY_MS,
+    },
   };
   for (const seat of next.seats.filter((s) => s.leaving)) {
     next = leaveSeat(next, seat.userId, now).room;
   }
   return next;
+}
+
+function snapshot(state: HandState, move: UndoEntry['move']): UndoEntry {
+  return {
+    move,
+    street: state.street,
+    board: [...state.board],
+    players: state.players.map(({ stack, bet, committed, status, hasActed, facedBet }) => ({
+      stack,
+      bet,
+      committed,
+      status,
+      hasActed,
+      facedBet,
+    })),
+    currentBet: state.currentBet,
+    lastFullRaise: state.lastFullRaise,
+    ...(state.raises ? { raises: state.raises.map((r) => ({ ...r, acted: [...r.acted] })) } : {}),
+    currentActor: state.currentActor,
+    pots: state.pots.map((p) => ({ id: p.id, amount: p.amount, eligible: [...p.eligible] })),
+  };
+}
+
+/** The hand as it was at `entry`; who is in it, their seats and the blinds never change. */
+function restore(state: HandState, entry: UndoEntry): HandState {
+  const { move, players, raises, ...table } = entry;
+  void move;
+  const { raises: later, ...rest } = state;
+  void later;
+  return {
+    ...rest,
+    ...table,
+    ...(raises ? { raises } : {}),
+    players: state.players.map((p, i) => ({ ...p, ...players[i]! })),
+  };
+}
+
+const chipsIn = (state: HandState): number =>
+  state.players.reduce((sum, p) => sum + p.stack + p.committed, 0);
+
+type NewLogEntry = RoomLogEntry extends infer E
+  ? E extends unknown
+    ? Omit<E, 'id'>
+    : never
+  : never;
+
+function logged(room: Readonly<RoomRecord>, entry: NewLogEntry): RoomRecord {
+  const log = room.log ?? [];
+  const id = (log.at(-1)?.id ?? 0) + 1;
+  return { ...room, log: [...log, { ...entry, id } as RoomLogEntry].slice(-ROOM_LOG_LIMIT) };
 }
 
 /**
@@ -103,12 +165,16 @@ function finishHand(room: Readonly<RoomRecord>, now: number): RoomRecord {
  *
  * Chips the engine hands back to a player who had already left (folded money nobody covered)
  * follow them: onto their new seat, or else another `cash_out` line.
+ *
+ * `move` makes the step undoable. A step without one (someone leaving), or one that paid out to a
+ * player who had left, empties the history instead: an undo must never go back past a departure,
+ * or it would bring the player back or take back chips already cashed out.
  */
 function advanceTo(
   room: Readonly<RoomRecord>,
   state: HandState,
   now: number,
-  leaver?: string,
+  { leaver, move }: { leaver?: string; move?: UndoEntry['move'] } = {},
 ): RoomRecord {
   const before = room.game!.hand!;
   let hand: GameHand = { ...before, state, turnSeq: (before.turnSeq ?? 0) + 1 };
@@ -117,10 +183,12 @@ function advanceTo(
     next = leaveSeat(next, leaver, now).room;
     hand = { ...hand, departed: [...hand.departed, leaver] };
   }
+  let paidOut = false;
   for (const id of before.departed) {
     const stackIn = (s: HandState) => s.players.find((p) => p.playerId === id)!.stack;
     const amount = stackIn(state) - stackIn(before.state);
     if (amount <= 0) continue;
+    paidOut = true;
     next = next.seats.some((s) => s.userId === id)
       ? {
           ...next,
@@ -128,7 +196,11 @@ function advanceTo(
         }
       : { ...next, ledger: [...next.ledger, { t: now, userId: id, kind: 'cash_out', amount }] };
   }
-  next = { ...next, game: { ...room.game!, hand } };
+  const undo =
+    move && !paidOut && room.settings.mode === 'hybrid'
+      ? [...(before.undo ?? []), snapshot(before.state, move)].slice(-UNDO_DEPTH)
+      : [];
+  next = { ...next, game: { ...room.game!, hand: { ...hand, undo } } };
   return state.street === 'ended' ? finishHand(next, now) : next;
 }
 
@@ -263,7 +335,10 @@ export function act(
       ? { type: intent.type, playerId: userId, amount: intent.amount }
       : { type: intent.type, playerId: userId };
   const r = applyAction(found.hand.state, action);
-  return r.ok ? done(advanceTo(room, r.value.state, ctx.now)) : engineRefusal(room, r.error);
+  const move = { action: intent.type, userId };
+  return r.ok
+    ? done(advanceTo(room, r.value.state, ctx.now, { move }))
+    : engineRefusal(room, r.error);
 }
 
 /** `host:advance_street`. */
@@ -287,7 +362,132 @@ export function advance(
     type: 'advance_street',
     ...(intent.cards ? { cards: intent.cards } : {}),
   });
-  return r.ok ? done(advanceTo(room, r.value.state, ctx.now)) : engineRefusal(room, r.error);
+  const move = { action: 'deal' as const, userId: null };
+  return r.ok
+    ? done(advanceTo(room, r.value.state, ctx.now, { move }))
+    : engineRefusal(room, r.error);
+}
+
+/**
+ * `host:undo` (hybrid): take back the last move or deal of the running hand. `turnSeq` goes up,
+ * never back, so nothing sent for an earlier state can land. A pending award must be stopped
+ * (disputed) first; a disputed one is dropped. A hand that has ended cannot be undone.
+ */
+export function undo(
+  room: Readonly<RoomRecord>,
+  userId: string,
+  intent: ClientEventPayload<'host:undo'>,
+  ctx: GameContext,
+): GameResult {
+  const gated = hostGate(room, userId);
+  if (gated) return gated;
+  if (room.settings.mode !== 'hybrid') {
+    return refuse(room, 'wrong_mode', 'only hybrid games can be undone');
+  }
+  const found = current(room, intent.handId);
+  if ('refused' in found) return found.refused;
+  const { hand } = found;
+  if (intent.turnSeq !== (hand.turnSeq ?? 0)) {
+    return refuse(room, 'stale_hand', 'the table has moved on');
+  }
+  if (hand.proposal && !hand.proposal.disputed) {
+    return refuse(room, 'illegal_action', 'stop the pending award first');
+  }
+  const entry = hand.undo?.at(-1);
+  if (!entry) return refuse(room, 'illegal_action', 'there is nothing to undo');
+  const state = restore(hand.state, entry);
+  // Every way chips leave or join a hand empties the history; never restore one that disagrees.
+  if (
+    entry.players.length !== hand.state.players.length ||
+    chipsIn(state) !== chipsIn(hand.state)
+  ) {
+    return refuse(room, 'invalid_state', 'that step can no longer be undone');
+  }
+  const restored: GameHand = {
+    ...hand,
+    state,
+    turnSeq: (hand.turnSeq ?? 0) + 1,
+    proposal: null,
+    undo: hand.undo!.slice(0, -1),
+  };
+  const next: RoomRecord = {
+    ...room,
+    seats: syncStacks(room, restored),
+    game: { ...room.game!, hand: restored },
+  };
+  const mover = room.seats.find((s) => s.userId === entry.move.userId);
+  return done(
+    logged(next, {
+      kind: 'undo',
+      at: ctx.now,
+      action: entry.move.action,
+      username: mover?.username ?? null,
+      street: entry.move.action === 'deal' ? hand.state.street : entry.street,
+    }),
+  );
+}
+
+/**
+ * `host:adjust_stack` (hybrid, once the game has started): correct a seated player's stack by a
+ * signed amount, with a ledger `adjust` line and a room log entry.
+ *
+ * Not while the player is still contesting the running hand (active or all-in): their stack is
+ * part of the betting. Between hands, before they are dealt in, or after they fold is fine; after
+ * they fold, the hand's undo history goes, so an undo cannot reverse the correction.
+ */
+export function adjustStack(
+  room: Readonly<RoomRecord>,
+  userId: string,
+  intent: ClientEventPayload<'host:adjust_stack'>,
+  ctx: GameContext,
+): GameResult {
+  const gated = hostGate(room, userId);
+  if (gated) return gated;
+  if (room.settings.mode !== 'hybrid') {
+    return refuse(room, 'wrong_mode', 'stacks can only be corrected in hybrid games');
+  }
+  if (room.status !== 'playing') {
+    return refuse(room, 'illegal_action', 'the game has not started');
+  }
+  const seat = room.seats.find((s) => s.userId === intent.userId);
+  if (!seat) return refuse(room, 'not_seated', 'that player has no seat');
+  if (seat.stack !== intent.stack) return refuse(room, 'stale_hand', 'that stack has changed');
+  const hand = running(room);
+  const player = hand ? playerOf(hand, seat.userId) : undefined;
+  if (player && player.status !== 'folded') {
+    return refuse(room, 'illegal_action', 'that player is still in this hand');
+  }
+  const stack = seat.stack + intent.amount;
+  if (stack < 0 || (intent.amount > 0 && stack > MAX_CHIPS)) {
+    return refuse(room, 'invalid_amount', `a stack must stay between 0 and ${MAX_CHIPS}`);
+  }
+  const line: RoomRecord['ledger'][number] = {
+    t: ctx.now,
+    userId: seat.userId,
+    kind: 'adjust',
+    amount: intent.amount,
+    note: intent.reason,
+  };
+  let next: RoomRecord = {
+    ...room,
+    seats: room.seats.map((s) => (s === seat ? { ...s, stack } : s)),
+    ledger: [...room.ledger, line],
+  };
+  if (hand && player) {
+    const players = hand.state.players.map((p) => (p === player ? { ...p, stack } : p));
+    const corrected: GameHand = { ...hand, state: { ...hand.state, players }, undo: [] };
+    next = { ...next, game: { ...next.game!, hand: corrected } };
+  }
+  return done(
+    logged(next, {
+      kind: 'adjust',
+      at: ctx.now,
+      username: seat.username,
+      amount: intent.amount,
+      stack,
+      reason: intent.reason,
+    }),
+  );
 }
 
 type Award = ClientEventPayload<'host:award'>['awards'][number];
@@ -401,6 +601,8 @@ export function leave(room: Readonly<RoomRecord>, userId: string, now: number): 
     if (handStaysLive(state, player.seat, player.status)) {
       return done({
         ...room,
+        // As for any departure: no undo goes back past it.
+        game: { ...room.game!, hand: { ...hand, undo: [] } },
         seats: room.seats.map((s) =>
           s === seated ? { ...s, sittingOut: true, leaving: true } : s,
         ),
@@ -410,5 +612,5 @@ export function leave(room: Readonly<RoomRecord>, userId: string, now: number): 
     if (!r.ok) return engineRefusal(room, r.error);
     state = r.value.state;
   }
-  return done(advanceTo(room, state, now, userId));
+  return done(advanceTo(room, state, now, { leaver: userId }));
 }

@@ -142,6 +142,28 @@ export function deadBlindFloor(state: HandState): (playerId: string) => number {
   };
 }
 
+/**
+ * The collected pots as they would be paid if no more chips went in: without folded chips from
+ * earlier streets that nobody still in has covered (only possible after players leave out of turn).
+ * `settleBets` gives those back on the river unless later betting covers them, so showing them
+ * would overstate what can be won. For display only; awards use `state.pots`, which already agrees
+ * at showdown.
+ */
+export function potsOnShow(state: HandState): Pot[] {
+  const live = state.players.filter((p) => p.status !== 'folded');
+  const covered = Math.max(0, ...live.map((p) => p.committed));
+  let excess = state.players
+    .filter((p) => p.status === 'folded')
+    .reduce((sum, p) => sum + Math.max(0, p.committed - p.bet - covered), 0);
+  const pots = [...state.pots];
+  for (let i = pots.length - 1; i >= 0 && excess > 0; i--) {
+    const cut = Math.min(excess, pots[i]!.amount);
+    pots[i] = { ...pots[i]!, amount: pots[i]!.amount - cut };
+    excess -= cut;
+  }
+  return pots.filter((pot) => pot.amount > 0);
+}
+
 const potsEqual = (a: readonly Pot[], b: readonly Pot[]): boolean =>
   a.length === b.length &&
   a.every((p, i) => {

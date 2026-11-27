@@ -42,10 +42,11 @@ export function seatPosition(index: number, count: number): { x: number; y: numb
   return { x, y };
 }
 
-/** Everything in the middle: collected pots plus this street's bets. */
+/** Everything in the middle: collected pots plus this street's bets, leavers' included. */
 export function potTotal(room: PublicRoomState): number {
   const collected = room.hand?.pots.reduce((sum, p) => sum + p.amount, 0) ?? 0;
-  return collected + room.seats.reduce((sum, s) => sum + (s?.bet ?? 0), 0);
+  const departed = room.hand?.departedBet ?? 0;
+  return collected + departed + room.seats.reduce((sum, s) => sum + (s?.bet ?? 0), 0);
 }
 
 export const potName = (index: number, count: number) =>

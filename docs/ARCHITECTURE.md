@@ -118,7 +118,7 @@ startHand(table: TableState, deck: Card[] | null): HandState   // deck null in h
 - **Side pots:** computed from each player's contributions at every all-in. Each pot lists its eligible players, and odd chips go to the first winner left of the button.
 - **Evaluator:** a 7-card evaluator that returns the rank category plus kickers for comparison and a display name ("Flush, King high").
 - **Equity (practice hints):** Monte Carlo over random runouts against random opponent hands, run in the browser in a Web Worker with a time budget.
-- **Undo (hybrid):** the RoomActor keeps the last K engine states, and undo restores the previous one. The engine itself stays stateless.
+- **Undo (hybrid):** the room keeps what the last 10 steps (moves and deals) of the running hand changed, and undo restores the previous one. Hand end, a departure or a stack correction empties it. `turnSeq` never goes back. The engine itself stays stateless.
 - **Chips are integers** everywhere.
 
 Test priorities: side pots with 3+ all-ins, split pots, min-raise edge cases, heads-up, the evaluator against a known-hands corpus, and a property test that chips are conserved across random action sequences.
@@ -141,14 +141,14 @@ Test priorities: side pots with 3+ all-ins, split pots, min-raise edge cases, he
 - `denied`: `userId → cooldownUntil`
 - `topUpRequests`: `{ requestId, userId, amount, createdAt }[]`
 - `pendingTopUps`: approved amounts, applied at the next hand start
-- `ledger`: append-only `{ t, userId, kind: 'buy_in'|'top_up'|'adjust'|'hand_result', amount, note? }[]`, which is the source of truth for the recap
+- `ledger`: append-only `{ t, userId, kind: 'buy_in'|'top_up'|'adjust'|'hand_result', amount, note? }[]`, which is the source of truth for the recap (`amount` is signed for `adjust`, whose `note` is the reason)
+- `log`: the last 20 host corrections (undo, stack adjust), shown to every admitted player
 
 ### Persistence (Redis)
 | Key | Value | TTL |
 |---|---|---|
 | `room:{code}` | Room state above (settings, seats, stacks, host, admitted, requests, ledger) | 2h, refreshed on activity |
 | `room:{code}:hand` | Current `HandState` (incl. deck in online mode) | Deleted at hand end |
-| `room:{code}:undo` | Last K hand states (hybrid) | Same as room |
 | `user:{userId}:room` | Room code the user is seated in | Same as room |
 
 On server boot, the registry lazily rehydrates an actor from Redis when the first socket for that room connects. Timers resume from stored deadlines (epoch ms), not from remaining-seconds counters.
@@ -247,8 +247,8 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | `host:advance_street` | `{ handId, turnSeq, street, cards? }` | Host, hybrid |
 | `host:award` | `{ handId, turnSeq, awards: [{ potId, winners }] }` (every pot) | Host, hybrid |
 | `host:dispute` | `{ handId }` | Any seated player or the host, during the 5s award window |
-| `host:undo` | `{ handId }` | Host, hybrid |
-| `host:adjust_stack` | `{ userId, amount, reason }` | Host, hybrid |
+| `host:undo` | `{ handId, turnSeq }` (the last move or deal of the running hand) | Host, hybrid |
+| `host:adjust_stack` | `{ userId, amount, reason, stack }` (signed delta; `stack` = what the host saw). Not while that player is still in the hand | Host, hybrid |
 | `chat:send` | `{ text }` (≤ 200 chars) | Seated player |
 | `chat:react` | `{ emoji }` (allow-list) | Seated player |
 

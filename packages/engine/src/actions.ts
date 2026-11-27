@@ -343,6 +343,21 @@ export function applyAction(state: HandState, action: PlayerAction): Result<Tran
     players,
     currentBet: raisesBet ? newBet : state.currentBet,
     lastFullRaise: isFullRaise ? raiseSize : state.lastFullRaise,
+    ...(isFullRaise
+      ? {
+          raises: [
+            ...(state.raises ?? []),
+            {
+              from: state.currentBet,
+              to: newBet,
+              size: state.lastFullRaise,
+              acted: state.players
+                .filter((p) => p !== me && isActive(p) && p.hasActed)
+                .map((p) => p.playerId),
+            },
+          ],
+        }
+      : {}),
   };
 
   const live = players.filter((p) => p.status !== 'folded');
@@ -364,6 +379,46 @@ export function applyAction(state: HandState, action: PlayerAction): Result<Tran
 }
 
 /**
+ * The bet to match has dropped to `currentBet`: take back the full raises above it (newest first).
+ * One that is only cut down, but still by a full raise's worth, stands at the smaller size. A hand
+ * stored without `raises` falls back to the step up from the next live bet below (`step`).
+ */
+function voidRaises(
+  state: HandState,
+  players: HandState['players'],
+  currentBet: number,
+  step: number,
+) {
+  const raises = [...(state.raises ?? [])];
+  if (raises.length === 0) {
+    const lastFullRaise = Math.max(state.bigBlind, Math.min(state.lastFullRaise, step));
+    return { players, lastFullRaise, raises };
+  }
+  let { lastFullRaise } = state;
+  const reclose = new Set<string>();
+  for (let top = raises.pop(); top; top = raises.pop()) {
+    if (top.to <= currentBet) {
+      raises.push(top);
+      break;
+    }
+    if (currentBet - top.from >= top.size) {
+      raises.push({ ...top, to: currentBet });
+      lastFullRaise = currentBet - top.from;
+      break;
+    }
+    lastFullRaise = top.size;
+    for (const id of top.acted) reclose.add(id);
+  }
+  return {
+    players: players.map((p) =>
+      reclose.has(p.playerId) && isActive(p) ? { ...p, hasActed: true } : p,
+    ),
+    lastFullRaise,
+    raises,
+  };
+}
+
+/**
  * A player gives up their hand without waiting for their turn (P33: they leave the table). Only a
  * player who can still act (`active`) on a betting street may be folded; an all-in player's hand
  * stays live to showdown.
@@ -373,8 +428,9 @@ export function applyAction(state: HandState, action: PlayerAction): Result<Tran
  *   (`bet_returned`), as in P22.
  * - If that leaves no live player at the current bet, `currentBet` drops to the highest live
  *   player's bet (never below the big blind preflop), so nobody is asked to call a bet that is
- *   gone. The min-raise becomes the step up to that bet from the next live bet below it (at least
- *   the big blind).
+ *   gone.
+ * - A full raise that is gone with it is undone (`voidRaises`): the min-raise goes back to what it
+ *   was, and players it had reopened count as having acted again, so it cannot let them re-raise.
  */
 export function foldOut(state: HandState, playerId: string): Result<Transition> {
   if (typeof state !== 'object' || state === null || !Array.isArray(state.players)) {
@@ -415,14 +471,18 @@ export function foldOut(state: HandState, playerId: string): Result<Transition> 
   const bets = live.map((p) => p.bet);
   const floor = state.street === 'preflop' ? state.bigBlind : 0;
   const currentBet = Math.min(state.currentBet, Math.max(floor, ...bets));
-  let { lastFullRaise } = state;
+  let folded: HandState = { ...state, players, currentBet };
   if (currentBet < state.currentBet) {
     const below = Math.max(0, ...bets.filter((b) => b < currentBet));
-    lastFullRaise = Math.max(state.bigBlind, Math.min(lastFullRaise, currentBet - below));
-    players = players.map((p) => ({ ...p, facedBet: Math.min(p.facedBet, currentBet) }));
+    const voided = voidRaises(state, players, currentBet, currentBet - below);
+    players = voided.players.map((p) => ({ ...p, facedBet: Math.min(p.facedBet, currentBet) }));
+    folded = {
+      ...folded,
+      players,
+      lastFullRaise: voided.lastFullRaise,
+      ...(state.raises ? { raises: voided.raises } : {}),
+    };
   }
-
-  const folded: HandState = { ...state, players, currentBet, lastFullRaise };
   // The player on turn may be the leaver, or may no longer owe anything.
   const turn = players.find((p) => p.seat === state.currentActor);
   const next: HandState = {

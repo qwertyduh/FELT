@@ -3,6 +3,15 @@ import { z } from 'zod';
 /** Upper bound for any single chip amount (keeps sums far inside Number.MAX_SAFE_INTEGER). */
 export const MAX_CHIPS = 1_000_000_000;
 
+/** How many entries the public room log keeps (the oldest drop off). */
+export const ROOM_LOG_LIMIT = 20;
+export const ADJUST_REASON_MAX = 100;
+
+/** What a hybrid undo can take back: a player's move, or the host's last deal. */
+export const UNDO_ACTIONS = ['fold', 'check', 'call', 'bet', 'raise', 'all_in', 'deal'] as const;
+export const UndoActionSchema = z.enum(UNDO_ACTIONS);
+export type UndoAction = z.infer<typeof UndoActionSchema>;
+
 /** Integer chips >= 0. */
 export const ChipsSchema = z.number().int().min(0).max(MAX_CHIPS);
 /** Integer chips >= 1. */

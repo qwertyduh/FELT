@@ -1,7 +1,8 @@
 /**
  * The host picks the winner(s) of every pot (PRD 5.5). Only a pot's eligible players are offered;
- * two or more split it. It is mounted for one `turnSeq`, so picks never carry over to a changed
- * hand.
+ * two or more split it. It stays mounted only while the pots, who can win them and any proposal
+ * are the same, so picks never carry over to a different decision. Names wrap in full: a cut-off
+ * name could pay the wrong player.
  */
 import { useState } from 'react';
 import type { PublicHand, PublicRoomState } from '@felt/protocol';
@@ -61,7 +62,7 @@ export function AwardSheet({
                     aria-pressed={on}
                     // One possible winner: nothing to choose.
                     disabled={pot.eligible.length === 1}
-                    className={`min-h-11 min-w-0 truncate rounded-xl border px-2 text-base ${
+                    className={`min-h-11 min-w-0 rounded-xl border px-2 py-1 text-base leading-tight wrap-anywhere ${
                       on
                         ? 'border-brass bg-brass font-semibold text-felt-950'
                         : 'border-felt-700 text-cream'

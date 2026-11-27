@@ -23,6 +23,7 @@ import {
 } from '../lib/seating';
 import { usePressGuard } from '../lib/usePressGuard';
 import { useStillCards } from '../lib/useStillCards';
+import { RoomLog } from './hybrid/RoomLog';
 import { InviteButton } from './InviteButton';
 import { SeatMap } from './SeatMap';
 import { Table, TableSummary } from './Table';
@@ -319,6 +320,7 @@ export function WaitingRoom({
             {title}
           </h1>
           {started && <p className="text-sm text-brass tabular-nums">{blinds}</p>}
+          {started && room.settings.mode === 'hybrid' && <RoomLog log={room.log} />}
           <InviteButton code={room.code} />
         </div>
         {started ? (

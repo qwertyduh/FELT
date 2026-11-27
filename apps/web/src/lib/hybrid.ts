@@ -2,7 +2,16 @@
  * Hybrid host controls (P41): what the table is waiting for the host to do. Read from
  * `room:state`; the server checks every intent again.
  */
-import type { PublicHand, PublicRoomState } from '@felt/protocol';
+import type {
+  ErrorPayload,
+  PublicHand,
+  PublicRoomState,
+  PublicSeat,
+  RoomLogEntry,
+  UndoAction,
+} from '@felt/protocol';
+import { chips } from './seating';
+import { streetName } from './table';
 
 export type DealStreet = 'preflop' | 'flop' | 'turn' | 'river';
 export type HostStep = { kind: 'deal'; street: DealStreet } | { kind: 'award' };
@@ -43,3 +52,66 @@ export function initialPicks(hand: PublicHand): Record<string, string[]> {
 
 export const playerName = (room: PublicRoomState, userId: string) =>
   room.seats.find((s) => s?.userId === userId)?.username ?? 'A player';
+
+const MOVES: Readonly<Record<Exclude<UndoAction, 'deal'>, string>> = {
+  fold: 'fold',
+  check: 'check',
+  call: 'call',
+  bet: 'bet',
+  raise: 'raise',
+  all_in: 'all-in',
+};
+
+const dealt = (street: PublicHand['street']) =>
+  street === 'showdown' ? 'the move to showdown' : `the ${streetName(street).toLowerCase()} deal`;
+
+/** What an undo would take back, as in "Undo bea's call". */
+export function undoName(room: PublicRoomState, hand: PublicHand): string {
+  const { undo } = hand;
+  if (!undo) return 'the last step';
+  if (undo.action === 'deal') return dealt(hand.street);
+  return `${playerName(room, undo.userId!)}'s ${MOVES[undo.action]}`;
+}
+
+export function logLine(entry: RoomLogEntry): string {
+  if (entry.kind === 'adjust') {
+    const sign = entry.amount > 0 ? '+' : '−';
+    return `Host changed ${entry.username}'s stack by ${sign}${chips(Math.abs(entry.amount))} to ${chips(entry.stack)}: ${entry.reason}`;
+  }
+  if (entry.action === 'deal') return `Host undid ${dealt(entry.street)}`;
+  const who = entry.username ?? 'a player';
+  return `Host undid ${who}'s ${MOVES[entry.action]} (${streetName(entry.street).toLowerCase()})`;
+}
+
+/** Whether the host's correction must wait: this player's chips are still being bet. */
+export function stillInHand(room: PublicRoomState, seat: PublicSeat): boolean {
+  const { hand } = room;
+  return (
+    hand !== null &&
+    hand.street !== 'ended' &&
+    seat.handStatus !== null &&
+    seat.handStatus !== 'folded'
+  );
+}
+
+export function adjustFailure({ code }: ErrorPayload): string {
+  switch (code as string) {
+    case 'stale_hand':
+      return 'That stack changed. Check it and try again.';
+    case 'illegal_action':
+      return "They can't be corrected right now: they are in the hand.";
+    case 'not_seated':
+      return 'That player has no seat now.';
+    case 'invalid_amount':
+    case 'invalid_payload':
+      return "The table didn't accept that. Use plain text and a smaller change.";
+    case 'room_paused':
+      return 'The game is paused.';
+    case 'rate_limited':
+      return 'Too fast. Wait a moment.';
+    case 'timeout':
+      return 'No answer. Check the room log before trying again.';
+    default:
+      return 'Not saved. Try again.';
+  }
+}
