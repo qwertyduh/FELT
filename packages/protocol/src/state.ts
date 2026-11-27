@@ -9,6 +9,7 @@ import {
   ROOM_LOG_LIMIT,
   SeatIndexSchema,
   StreetSchema,
+  TableChipsByUserSchema,
   TableChipsSchema,
   TurnSeqSchema,
   UndoActionSchema,
@@ -23,8 +24,9 @@ import {
 
 /**
  * Public room state: what every ADMITTED player may see. It must never carry
- * hole cards or the deck (those travel only in `hand:private`). Strict schemas
- * reject any stray `hole` / `holeCards` / `deck` key. Join/top-up requests are
+ * the deck or anybody's hole cards (those travel only in `hand:private`), with one
+ * exception: `hand.outcome.hands`, the cards shown once an online hand has ended.
+ * Strict schemas reject any stray `hole` / `holeCards` / `deck` key. Join/top-up requests are
  * host-only (see HostInbox in events.ts), not part of this state.
  */
 
@@ -96,6 +98,50 @@ export const TurnOptionsSchema = z
   .strict();
 export type TurnOptions = z.infer<typeof TurnOptionsSchema>;
 
+/** A hand turned face up after an online hand ended. */
+export const ShownHandSchema = z
+  .object({
+    userId: UserIdSchema,
+    cards: z.tuple([CardSchema, CardSchema]),
+    /** Null when it was never evaluated (shown after folding, or the hand ended by folds). */
+    handName: z.string().min(1).max(60).nullable(),
+    /** True when the player chose to show it (`hand:show`); false when the rules revealed it. */
+    voluntary: z.boolean(),
+  })
+  .strict();
+export type ShownHand = z.infer<typeof ShownHandSchema>;
+
+/** Online only: how the hand ended. Present exactly while `street` is `ended`. */
+export const HandOutcomeSchema = z
+  .object({
+    /**
+     * All-in run-out: how many board cards were face up when the betting closed. The rest of
+     * `board` was dealt at once, with the contesting hands face up, for clients to turn over street
+     * by street. Null when there was no run-out.
+     */
+    runoutFrom: z.union([z.literal(0), z.literal(3), z.literal(4)]).nullable(),
+    /** In showing order. A mucked or folded hand is absent unless its owner showed it. */
+    hands: z.array(ShownHandSchema).max(MAX_SEATS),
+    /** One per pot, main pot first. `handNames` covers the winners of a contested pot. */
+    awards: z
+      .array(
+        z
+          .object({
+            potId: IdSchema,
+            winners: z.array(UserIdSchema).max(MAX_SEATS),
+            amounts: TableChipsByUserSchema,
+            contested: z.boolean(),
+            handNames: z.record(UserIdSchema, z.string().max(60)),
+          })
+          .strict(),
+      )
+      .max(MAX_SEATS),
+    /** When the next hand is due (absolute epoch ms); null if none is scheduled. */
+    nextHandAt: EpochMsSchema.nullable(),
+  })
+  .strict();
+export type HandOutcome = z.infer<typeof HandOutcomeSchema>;
+
 export const PublicHandSchema = z
   .object({
     handId: IdSchema,
@@ -133,6 +179,8 @@ export const PublicHandSchema = z
     /** Hybrid: betting is complete and the host must advance the street / award. */
     awaitingHost: z.boolean(),
     pendingAwards: z.array(PendingAwardSchema).max(MAX_SEATS),
+    /** Online hands that have ended; absent otherwise (and always in hybrid). */
+    outcome: HandOutcomeSchema.optional(),
   })
   .strict();
 export type PublicHand = z.infer<typeof PublicHandSchema>;

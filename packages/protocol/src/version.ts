@@ -9,7 +9,7 @@
  * the version. Also append an entry (any new unique string) for a change in meaning that the
  * schemas cannot show.
  */
-export const WIRE_FINGERPRINTS = ['8b9336e3', 'd0aa94a4', '8fcdfffe'] as const;
+export const WIRE_FINGERPRINTS = ['8b9336e3', 'd0aa94a4', '8fcdfffe', 'c7097c27'] as const;
 
 export const PROTOCOL_VERSION: number = WIRE_FINGERPRINTS.length;
 

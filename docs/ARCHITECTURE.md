@@ -255,9 +255,10 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | `host:mute` | `{ userId, muted }` | Host |
 | `host:seat_hold` | `{ minutes }` (1–30, default 3; applies to later disconnects) | Host |
 | `host:force_fold` | `{ handId, turnSeq, userId }`. Folds a disconnected player on turn, only with the turn timer off; cannot be undone | Host |
+| `hand:show` | `{ handId }`. Turns your own cards face up after an online hand ends (fold-out winner, mucked or folded), until the next deal | Admitted player dealt into the hand, online |
 | `host:advance_street` | `{ handId, turnSeq, street, cards? }` | Host, hybrid |
 | `host:award` | `{ handId, turnSeq, awards: [{ potId, winners }] }` (every pot) | Host, hybrid |
-| `host:dispute` | `{ handId }` | Any seated player or the host, during the 5s award window |
+| `host:dispute` | `{ handId }` | Any seated player or the host, during the 5s award window (hybrid) |
 | `host:undo` | `{ handId, turnSeq }` (the last move or deal of the running hand) | Host, hybrid |
 | `host:adjust_stack` | `{ userId, amount, reason, stack }` (signed delta; `stack` = what the host saw). Not while that player is still in the hand | Host, hybrid |
 | `chat:send` | `{ text }` (≤ 200 chars) | Seated player |
@@ -285,7 +286,7 @@ Web and server deploy separately and open tabs keep old bundles.
 | `player:topup_decision` | `{ requestId, approved, amount, reason? }` (`over_max`: dropped when due) | Requester |
 | `player:topup_status` | `{ pending: { requestId, amount } \| null }` (own unanswered request; on entry and on change) | One player |
 | `room:state` | Full public room + hand state, `version` number | Admitted players |
-| `hand:private` | `{ handId, holeCards }` | One player (online mode) |
+| `hand:private` | `{ handId, holeCards }` | One player's own sockets (online mode) |
 | `hand:result` | Pots, winners, revealed hands | Room |
 | `turn:start` | `{ userId, deadline }` | Room |
 | `chat:message` / `chat:reaction` | Message | Room |
@@ -296,7 +297,14 @@ Web and server deploy separately and open tabs keep old bundles.
 
 **State sync:** v1 broadcasts the full public state on every change, which is small at 9 seats. Each `room:state` carries a monotonically increasing `version`, and clients drop out-of-order updates. On reconnect, the server sends the current `room:state` (plus `hand:private` if applicable).
 
-**Privacy rule:** hole cards and the deck live only in server memory/Redis and in `hand:private` to their owner. The public state builder must be the only path to `room:state`, and a test asserts it never includes other players' cards.
+**Privacy rule:** hole cards and the deck live only in server memory/Redis and in `hand:private` to their owner. The public state builder must be the only path to `room:state`, and a test asserts it never includes other players' cards. The one exception is `hand.outcome.hands` after an online hand has ended (`rooms/reveal.ts`).
+
+**Online hands:** the server shuffles with `crypto.randomInt`; the engine deals, moves the streets on and settles the showdown. `hand:private` goes to a player's own sockets after the `room:state` of the deal, and again after every `room:enter`. Hybrid-only intents (`host:advance_street`, `host:award`, `host:dispute`, `host:undo`, `host:adjust_stack`) are refused (`wrong_mode`).
+
+**Ended online hand:** `room:state.hand.outcome` = `{ runoutFrom, hands: [{ userId, cards, handName, voluntary }], awards, nextHandAt }`.
+- Revealed by the rules: after an all-in run-out (`runoutFrom` 0, 3 or 4: board cards face up when betting closed) every hand still contesting; after any other showdown only the winners of contested pots; after everyone folds nothing. Others appear only via `hand:show`.
+- The state arrives with the full board and final stacks. A client with `runoutFrom` set turns the hands face up first, then the rest of the board street by street (at most 1.5s a step), and only then shows the result.
+- Next deal: 5s after a fold-out, 8s after a showdown, plus 2s per run-out street. A `hand:show` leaves at least 3s more.
 
 ---
 

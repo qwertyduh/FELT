@@ -13,7 +13,7 @@ import {
 } from '@felt/protocol';
 import { heldAgain } from './absence';
 import { freezeClock, restartClock, thawClock } from './blinds';
-import { leave, NEXT_HAND_DELAY_MS, running } from './game';
+import { leave, NEXT_HAND_DELAY_MS, nextHandDelay, running } from './game';
 import type { GameHand } from './gameSchema';
 import type { RoomRecord } from './roomStore';
 import { vacate, type SeatResult } from './seating';
@@ -72,7 +72,10 @@ export function resume(room: Readonly<RoomRecord>, userId: string, now: number):
     ...next,
     game: {
       ...game,
-      nextHandAt: game.nextHandAt === null ? null : now + NEXT_HAND_DELAY_MS,
+      nextHandAt:
+        game.nextHandAt === null
+          ? null
+          : now + (game.hand ? nextHandDelay(game.hand) : NEXT_HAND_DELAY_MS),
       hand:
         game.hand && proposal && !proposal.disputed
           ? { ...game.hand, proposal: { ...proposal, confirmAt: now + AWARD_CONFIRM_MS } }

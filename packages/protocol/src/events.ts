@@ -195,6 +195,12 @@ export const clientEventSchemas = {
     })
     .strict(),
   'host:dispute': z.object({ handId }).strict(),
+  /**
+   * Online: turn your own two cards face up after the hand has ended (won by everyone folding,
+   * mucked at showdown, or folded). Only the sender's cards, only for the hand named, and only
+   * until the next one is dealt (`stale_hand` after that).
+   */
+  'hand:show': z.object({ handId }).strict(),
   /** `turnSeq` as for `game:act`: a double or late send cannot undo a second step. */
   'host:undo': z.object({ handId, turnSeq }).strict(),
   /**
@@ -259,7 +265,10 @@ export const HandResultPayloadSchema = z
           .strict(),
       )
       .max(MAX_SEATS),
-    /** Revealed hands only (showdown); empty when everyone folded or in hybrid. */
+    /**
+     * Revealed hands only (showdown): never a mucked or folded hand. Empty when everyone folded or
+     * in hybrid. Later voluntary shows appear only in `room:state.hand.outcome`.
+     */
     showdown: z
       .array(
         z

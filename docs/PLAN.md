@@ -373,10 +373,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 
 ## Stage D — Online mode
 
-### ⬜ P47 · Server dealing & private hands
+### ✅ P47 · Server dealing & private hands
 - **Needs:** P33, P23
 - **Do:** For online rooms, shuffle with `crypto.randomInt`, call `startHand` with the deck, send `hand:private` to each owner, and run showdown via the engine.
 - **Done when:** tests show each socket receives only its own cards and the privacy test from P32 still passes with real decks.
+- _Note: GO (Opus tester: no card leak found). Online dealing in rooms/{game,gameService,reveal}.ts; new hand:show event; room:state.hand.outcome carries reveals and awards. Undo and stack adjust are refused online. Owner to confirm: an all-in on the river reveals only winners (all-ins with cards still to come turn every contesting hand up); hand:show works while paused and adds up to 3s before the next deal; ending the game mid-hand online lets a host who saw their cards take back a bad hand. Open: until P48 a disconnected player on turn stalls an online hand. Web and server deploy together (protocol 4)._
 
 ### ⬜ P48 · Turn timer
 - **Needs:** P47

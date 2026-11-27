@@ -1,7 +1,12 @@
 /**
- * Pure hybrid hand lifecycle over a RoomRecord (P33). Same contract as seating.ts: no I/O, `now`
- * and ids are passed in, inputs are never mutated, and an unchanged room is returned as the same
+ * Hand lifecycle over a RoomRecord, hybrid (P33) and online (P47). Same contract as seating.ts: no
+ * I/O, `now`, ids and the shuffle's randomness are passed in (the latter defaults to
+ * `crypto.randomInt`), inputs are never mutated, and an unchanged room is returned as the same
  * object. Poker rules live in the engine; this maps room intents onto it and keeps chips in step.
+ *
+ * Online: the shuffled deck is dealt by the engine, which also moves the streets on and settles the
+ * showdown by itself. Deck and hole cards live in `game.hand.state`; see reveal.ts for what of
+ * them may ever leave the server.
  *
  * Chips: after every engine step each dealt-in player's seat holds their engine stack, so at all
  * times `buy-ins - cash-outs = seat stacks + chips in the pot`.
@@ -9,15 +14,20 @@
  * Time: deadlines (`proposal.confirmAt`, `nextHandAt`) are absolute and stored in the room.
  * `tick` applies whatever is due; it is safe to call at any moment and any number of times.
  */
+import { randomInt } from 'node:crypto';
 import {
+  advanceStreet,
   applyAction,
   applyHostAction,
+  createDeck,
   foldOut,
   leaveOutlook,
+  shuffle,
   startHand,
   type EngineError,
   type HandState,
   type PlayerAction,
+  type RandInt,
   type Result,
   type Transition,
 } from '@felt/engine';
@@ -31,15 +41,47 @@ import {
 } from '@felt/protocol';
 import { dealBlinds } from './blinds';
 import { UNDO_DEPTH, type Game, type GameHand, type UndoEntry } from './gameSchema';
+import { shownHands } from './reveal';
 import type { RoomRecord } from './roomStore';
 import { leaveSeat, vacate, type SeatResult } from './seating';
 import { applyTopUps, dropTopUps } from './topUps';
 
 export const NEXT_HAND_DELAY_MS = 5_000;
+/** Online, after a showdown: time to read the hands before the next deal. */
+export const SHOWDOWN_DELAY_MS = 8_000;
+/** Online, added per street a client still has to turn over after an all-in run-out. */
+export const RUNOUT_STEP_MS = 2_000;
+/** A voluntary show leaves the table at least this long to see it. */
+export const SHOW_LINGER_MS = 3_000;
 
 export interface GameContext {
   now: number;
   newId: () => string;
+  /** Shuffle randomness; omitted (always, outside tests): `crypto.randomInt`. */
+  randInt?: RandInt;
+}
+
+const secureRandInt: RandInt = (max) => randomInt(max);
+
+const RUNOUT_STREETS = { 0: 3, 3: 2, 4: 1 } as const;
+
+/** How long an ended hand stays on the table. */
+export function nextHandDelay(hand: GameHand): number {
+  const { mode, result } = hand.state;
+  if (mode !== 'online' || !result?.showdown.length) return NEXT_HAND_DELAY_MS;
+  const streets = hand.runoutFrom === undefined ? 0 : RUNOUT_STREETS[hand.runoutFrom];
+  return SHOWDOWN_DELAY_MS + streets * RUNOUT_STEP_MS;
+}
+
+/**
+ * An online hand that went to showdown in a step that still had board cards to come was run out:
+ * the engine only does that once nobody can bet any more.
+ */
+function runout(boardBefore: number, state: HandState): Pick<GameHand, 'runoutFrom'> {
+  if (state.mode !== 'online' || !state.result?.showdown.length) return {};
+  return boardBefore === 0 || boardBefore === 3 || boardBefore === 4
+    ? { runoutFrom: boardBefore }
+    : {};
 }
 
 export type GameResult = SeatResult;
@@ -102,7 +144,7 @@ function finishHand(room: Readonly<RoomRecord>, now: number): RoomRecord {
     game: {
       ...game,
       hand: { ...hand, proposal: null, undo: [] },
-      nextHandAt: now + NEXT_HAND_DELAY_MS,
+      nextHandAt: now + nextHandDelay(hand),
     },
   };
   // `vacate`: a player removed by the host is no longer admitted, but is still cashed out.
@@ -180,7 +222,12 @@ function advanceTo(
   { leaver, move }: { leaver?: string; move?: UndoEntry['move'] } = {},
 ): RoomRecord {
   const before = room.game!.hand!;
-  let hand: GameHand = { ...before, state, turnSeq: (before.turnSeq ?? 0) + 1 };
+  let hand: GameHand = {
+    ...before,
+    state,
+    turnSeq: (before.turnSeq ?? 0) + 1,
+    ...runout(before.state.board.length, state),
+  };
   let next: RoomRecord = { ...room, seats: syncStacks(room, hand) };
   if (leaver !== undefined) {
     next = leaveSeat(next, leaver, now).room;
@@ -220,25 +267,32 @@ function deal(before: Readonly<RoomRecord>, ctx: GameContext): Result<RoomRecord
     return s ? { playerId: s.userId, stack: s.stack, sittingOut: s.sittingOut } : null;
   });
   const button = last !== null && last < maxSeats ? last : null;
-  const r: Result<Transition> = startHand(
-    { mode: 'hybrid', seats, button, smallBlind, bigBlind },
-    null,
-  );
+  const { mode } = room.settings;
+  const deck = mode === 'online' ? shuffle(createDeck(), ctx.randInt ?? secureRandInt) : null;
+  const r: Result<Transition> = startHand({ mode, seats, button, smallBlind, bigBlind }, deck);
   if (!r.ok) return r;
-  const state = r.value.state;
+  let state = r.value.state;
+  // The blinds can put everyone all-in: then there is nothing to wait for.
+  if (mode === 'online' && state.currentActor === null) {
+    const ran = advanceStreet(state);
+    if (!ran.ok) return ran;
+    state = ran.value.state;
+  }
   const hand: GameHand = {
     handId: ctx.newId(),
     turnSeq: 0,
     state,
     departed: [],
     proposal: null,
+    ...runout(0, state),
   };
-  const next: RoomRecord = {
+  let next: RoomRecord = {
     ...room,
     status: 'playing',
     game: { button: state.button, hand, nextHandAt: null },
   };
-  return { ok: true, value: { ...next, seats: syncStacks(next, hand) } };
+  next = { ...next, seats: syncStacks(next, hand) };
+  return { ok: true, value: state.street === 'ended' ? finishHand(next, ctx.now) : next };
 }
 
 /** The earliest stored deadline, or null. */
@@ -310,9 +364,6 @@ function current(
 export function start(room: Readonly<RoomRecord>, userId: string, ctx: GameContext): GameResult {
   const gated = hostGate(room, userId);
   if (gated) return gated;
-  if (room.settings.mode !== 'hybrid') {
-    return refuse(room, 'wrong_mode', 'online dealing is not available yet');
-  }
   if (running(room) || (room.game?.nextHandAt ?? null) !== null) {
     return refuse(room, 'illegal_action', 'the game is already running');
   }
@@ -343,9 +394,61 @@ export function act(
       : { type: intent.type, playerId: userId };
   const r = applyAction(found.hand.state, action);
   const move = { action: intent.type, userId };
-  return r.ok
-    ? done(advanceTo(room, r.value.state, ctx.now, { move }))
-    : engineRefusal(room, r.error);
+  if (!r.ok) return engineRefusal(room, r.error);
+  const was = found.hand.state;
+  const now = r.value.state;
+  let next = advanceTo(room, now, ctx.now, { move });
+  if (now.mode === 'online' && was.street === 'river' && now.currentBet > was.currentBet) {
+    // A raise leaves the betting open, so the hand is still the one in `next`.
+    const hand = { ...next.game!.hand!, aggressor: userId };
+    next = { ...next, game: { ...next.game!, hand } };
+  }
+  return done(next);
+}
+
+/** Online rooms run their own streets and showdowns. */
+const hybridOnly = (room: Readonly<RoomRecord>, what: string): GameResult | null =>
+  room.settings.mode === 'hybrid' ? null : refuse(room, 'wrong_mode', what);
+
+/**
+ * `hand:show` (online): turn your own cards face up once the hand has ended, whether you won it,
+ * mucked at showdown or folded. Nothing but the sender's own cards, nothing once the next hand is
+ * dealt. Showing twice, or what the rules already show, changes nothing. Allowed while paused: no
+ * chips move.
+ */
+export function show(
+  room: Readonly<RoomRecord>,
+  userId: string,
+  intent: ClientEventPayload<'hand:show'>,
+  ctx: GameContext,
+): GameResult {
+  if (!room.admitted.includes(userId)) {
+    return refuse(room, 'not_admitted', 'not admitted to this room');
+  }
+  if (room.status === 'ended') return refuse(room, 'room_ended', 'room has ended');
+  if (room.settings.mode !== 'online') {
+    return refuse(room, 'wrong_mode', 'cards are only shown in online games');
+  }
+  const game = room.game;
+  const hand = game?.hand;
+  if (!game || !hand) return refuse(room, 'no_hand', 'no hand is running');
+  if (hand.handId !== intent.handId) return refuse(room, 'stale_hand', 'that hand is over');
+  if (hand.state.street !== 'ended') {
+    return refuse(room, 'illegal_action', 'cards can be shown after the hand ends');
+  }
+  if (!hand.state.players.some((p) => p.playerId === userId && p.hole)) {
+    return refuse(room, 'not_seated', 'you were not dealt into this hand');
+  }
+  if (shownHands(hand.state, hand).some((h) => h.userId === userId)) return done(room);
+  return done({
+    ...room,
+    game: {
+      ...game,
+      hand: { ...hand, shown: [...(hand.shown ?? []), userId] },
+      nextHandAt:
+        game.nextHandAt === null ? null : Math.max(game.nextHandAt, ctx.now + SHOW_LINGER_MS),
+    },
+  });
 }
 
 /** `host:advance_street`. */
@@ -355,7 +458,8 @@ export function advance(
   intent: ClientEventPayload<'host:advance_street'>,
   ctx: GameContext,
 ): GameResult {
-  const gated = hostGate(room, userId);
+  const gated =
+    hostGate(room, userId) ?? hybridOnly(room, 'online games deal the streets themselves');
   if (gated) return gated;
   const found = current(room, intent.handId);
   if ('refused' in found) return found.refused;
@@ -566,7 +670,7 @@ export function proposeAward(
   intent: ClientEventPayload<'host:award'>,
   ctx: GameContext,
 ): GameResult {
-  const gated = hostGate(room, userId);
+  const gated = hostGate(room, userId) ?? hybridOnly(room, 'online pots are awarded automatically');
   if (gated) return gated;
   const found = current(room, intent.handId);
   if ('refused' in found) return found.refused;
@@ -603,7 +707,7 @@ export function dispute(
   userId: string,
   intent: ClientEventPayload<'host:dispute'>,
 ): GameResult {
-  const gated = gate(room, userId);
+  const gated = gate(room, userId) ?? hybridOnly(room, 'there is no award to dispute online');
   if (gated) return gated;
   if (room.hostId !== userId && !room.seats.some((s) => s.userId === userId)) {
     return refuse(room, 'not_seated', 'only seated players can dispute');

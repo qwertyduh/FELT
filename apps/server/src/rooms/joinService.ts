@@ -31,6 +31,7 @@ import {
 } from './admission';
 import { arrived, sessionBack, trackAbsence } from './absence';
 import { KeyedSerial } from './keyedSerial';
+import { privateHandOf } from './reveal';
 import type { StateBroadcaster } from './broadcaster';
 import { RoomGoneError, type RoomRecord } from './roomStore';
 import type { RoomActor } from './roomActor';
@@ -403,8 +404,11 @@ export class JoinService {
     // If this changes who is connected, publish a new version (which reaches this socket too).
     // Otherwise resend the current one unchanged.
     const published = await this.publishPresence(code);
-    if (!published && socket.data.roomCode === code && socket.connected) {
-      this.broadcaster.sendTo(socket, actor.state());
+    if (socket.data.roomCode === code && socket.connected) {
+      if (!published) this.broadcaster.sendTo(socket, actor.state());
+      // Their own cards again (reconnect, another device), after the state they belong to.
+      const own = privateHandOf(actor.state(), userId);
+      if (own) socket.emit('hand:private', own);
     }
     return OK;
   }

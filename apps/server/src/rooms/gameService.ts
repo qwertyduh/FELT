@@ -1,7 +1,8 @@
 /**
  * Hand lifecycle (P33): `host:start`, `game:act`, `host:advance_street`, `host:award`,
- * `host:dispute`, `host:undo`, `host:adjust_stack` (P42), `host:force_fold` (P45), the deadlines stored in the room, and `hand:result`. The rules (game.ts) run
- * inside the room's actor queue; this file only wires sockets and timers to them.
+ * `host:dispute`, `host:undo`, `host:adjust_stack` (P42), `host:force_fold` (P45), `hand:show`
+ * (P47), the deadlines stored in the room, `hand:private` and `hand:result`. The rules (game.ts)
+ * run inside the room's actor queue; this file only wires sockets and timers to them.
  */
 import { randomUUID } from 'node:crypto';
 import type { Ack, RoomCode, ServerEventPayload } from '@felt/protocol';
@@ -21,12 +22,14 @@ import {
   forceFold,
   nextDeadline,
   proposeAward,
+  show,
   start,
   tick,
   undo,
   type GameContext,
   type GameResult,
 } from './game';
+import { privateHandOf, publicAwards, shownHands } from './reveal';
 import { RoomGoneError, type RoomRecord } from './roomStore';
 import type { RoomRegistry } from './roomRegistry';
 
@@ -67,14 +70,12 @@ function handResult(
   if (prior?.handId === hand.handId && prior.state.result) return null;
   return {
     handId: hand.handId,
-    awards: result.awards.map((a) => ({
-      potId: a.potId,
-      winners: [...a.winners],
-      amounts: { ...a.amounts },
-      contested: a.contested,
-      handNames: { ...a.handNames },
-    })),
-    showdown: [], // hybrid shows no cards; online reveals arrive with Stage D
+    awards: publicAwards(result),
+    // Hybrid shows no cards. Online: only what the rules reveal (nobody has chosen to show yet).
+    showdown: shownHands(hand.state, hand).map(({ userId, cards }) => {
+      const entry = result.showdown.find((s) => s.playerId === userId)!;
+      return { userId, cards, handName: entry.handName, category: entry.category };
+    }),
     stacks: { ...result.stacks },
   };
 }
@@ -122,6 +123,12 @@ export class GameService {
     );
     onClientEvent(
       socket,
+      'hand:show',
+      (p) => this.intent(socket, (room, userId, ctx) => show(room, userId, p, ctx)),
+      log,
+    );
+    onClientEvent(
+      socket,
       'host:undo',
       (p) => this.intent(socket, (room, userId, ctx) => undo(room, userId, p, ctx)),
       log,
@@ -147,6 +154,14 @@ export class GameService {
   /** After every committed change (the actor's `onCommit`, after the state broadcast). */
   committed(room: Readonly<RoomRecord>, before: Readonly<RoomRecord>): void {
     this.arm(room.code, nextDeadline(room));
+    // A hand just dealt: each player's cards to their own sockets only, after the state.
+    const hand = room.game?.hand;
+    if (hand && hand.handId !== before.game?.hand?.handId) {
+      for (const { playerId } of hand.state.players) {
+        const own = privateHandOf(room, playerId);
+        if (own) this.io.to(memberChannel(room.code, playerId)).emit('hand:private', own);
+      }
+    }
     const result = handResult(room, before);
     if (result) this.io.to(roomChannel(room.code)).emit('hand:result', result);
   }

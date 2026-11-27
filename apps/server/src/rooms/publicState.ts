@@ -1,15 +1,17 @@
 /**
  * The single builder of `room:state` payloads. Privacy rule: every object here is written field by
  * field (an allow-list). Never spread a room, seat, hand or player object: that is how hole cards,
- * the deck, the ledger or join requests would leak.
+ * the deck, the ledger or join requests would leak. The only cards of a player that go out are
+ * those `shownHands` (reveal.ts) allows once an online hand has ended.
  */
 import { leaveOutlook, legalActions, potsOnShow, type HandState } from '@felt/engine';
 import type { PublicHand, PublicRoomState, PublicSeat, RoomLogEntry } from '@felt/protocol';
 import { upcomingIncrease } from './blinds';
+import { publicAwards, shownHands, type Revealing } from './reveal';
 import type { RoomRecord } from './roomStore';
 
 /** A running hand as the server holds it: the engine state plus what the engine does not track. */
-export interface LiveHand {
+export interface LiveHand extends Revealing {
   handId: string;
   turnSeq?: number | undefined;
   state: HandState;
@@ -21,6 +23,8 @@ export interface LiveHand {
   departed?: readonly string[];
   /** The one step an undo would take back (never the history). */
   undo?: PublicHand['undo'];
+  /** When the hand after an ended one is due. */
+  nextHandAt?: number | null;
 }
 
 function toPublicOptions(state: HandState): PublicHand['options'] {
@@ -66,6 +70,16 @@ function toPublicHand(live: LiveHand): PublicHand {
       confirmAt: a.confirmAt,
       disputed: a.disputed,
     })),
+    ...(state.mode === 'online' && state.result
+      ? {
+          outcome: {
+            runoutFrom: live.runoutFrom ?? null,
+            hands: shownHands(state, live),
+            awards: publicAwards(state.result),
+            nextHandAt: live.nextHandAt ?? null,
+          },
+        }
+      : {}),
   };
 }
 
@@ -87,6 +101,10 @@ export function liveHandOf(room: Readonly<RoomRecord>): LiveHand | null {
     state: hand.state,
     turnDeadline: null, // P48
     departed: hand.departed,
+    runoutFrom: hand.runoutFrom,
+    shown: hand.shown,
+    aggressor: hand.aggressor,
+    nextHandAt: room.game!.nextHandAt,
     undo: last ? { action: last.action, userId: last.userId } : null,
     ...(proposal
       ? {

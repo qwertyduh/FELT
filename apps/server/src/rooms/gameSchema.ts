@@ -122,6 +122,12 @@ export const GameSchema = z.strictObject({
       proposal: ProposalSchema.nullable(),
       /** Oldest first. Absent or empty: nothing can be undone. */
       undo: z.array(UndoEntrySchema).max(UNDO_DEPTH).optional(),
+      /** Online: board cards face up when an all-in run-out began; absent if there was none. */
+      runoutFrom: z.union([z.literal(0), z.literal(3), z.literal(4)]).optional(),
+      /** Online: who chose to show their cards after the hand ended. */
+      shown: z.array(Id).optional(),
+      /** Online: the last player to bet or raise on the river (they show first). */
+      aggressor: Id.optional(),
     })
     .nullable(),
   /** Absolute epoch ms at which the next hand is dealt; null when none is scheduled. */
