@@ -303,10 +303,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** Playwright shows the host admitting 2 queued requests.
 - _Note: GO round 3 (round 1: cards moving under the thumb could admit the wrong person; round 2: same via a long touch press; both fixed). components/HostInbox.tsx: fixed-height top-anchored list in normal flow, new or moved cards ignore taps for 400ms, a click must match its pointerdown. P36 follow-ups fixed; room:cancel_request now takes {code}. Top-up card is a text placeholder until P43. P39/P40: recheck the inbox height once the table and action bar share the screen (about one card visible at 375x667). A host transfer (P44) must send the new host the inbox._
 
-### ⬜ P38 · Web: waiting room & seat picker
+### ✅ P38 · Web: waiting room & seat picker
 - **Needs:** P31, P37
 - **Do:** A seat map, tap a seat → buy-in input (range shown) → sit. The host sees a Start button once 2+ players are seated.
 - **Done when:** Playwright shows 3 players seated and the host starting the game.
+- _Note: Built and tested (GO). Invite button shown to all admitted players; seats are fixed positions 1-9. A returning leaver learns the exact re-sit amount from the server refusal text (a protocol field would be sturdier). No phase owns a Leave / Sit out button yet. Carry to P39/P40: an arriving request card pushes the buy-in panel and Start out of view; Start tap guard arms on mount only._
 
 ### ⬜ P39 · Web: table view
 - **Needs:** P38

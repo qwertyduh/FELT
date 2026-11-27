@@ -9,6 +9,7 @@ import {
   type RoomPreview,
 } from '@felt/protocol';
 import { HostInbox } from '../components/HostInbox';
+import { WaitingRoom } from '../components/WaitingRoom';
 import { apiFetch } from '../lib/api';
 import { useAuthStore } from '../lib/authStore';
 import { getWebEnv } from '../lib/env';
@@ -242,7 +243,6 @@ function DeniedScreen({
   );
 }
 
-/** Minimal until the waiting room and seat picker (P38). */
 function EnteredScreen({
   userId,
   online,
@@ -253,19 +253,17 @@ function EnteredScreen({
   client: SocketClient;
 }) {
   const room = useRoomStore((s) => s.room);
-  const hosting = room?.hostId === userId;
   return (
     <div data-testid="entered-room" className="flex flex-1 flex-col">
-      <Screen title={hosting ? "You're hosting" : "You're in"}>
-        <Note>
-          {online ? 'The seats are being set up. Hang tight.' : 'Finding the table again…'}
-        </Note>
-        {room && (
-          <p data-testid="blinds" className="text-lg text-brass tabular-nums">
-            Blinds {chips(room.settings.smallBlind)} / {chips(room.settings.bigBlind)}
-          </p>
-        )}
-      </Screen>
+      {room ? (
+        <WaitingRoom room={room} userId={userId} ready={online} client={client} />
+      ) : (
+        <Screen title="You're in">
+          <Note>
+            {online ? 'The seats are being set up. Hang tight.' : 'Finding the table again…'}
+          </Note>
+        </Screen>
+      )}
       <HostInbox userId={userId} ready={online} client={client} />
     </div>
   );

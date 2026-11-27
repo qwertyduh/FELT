@@ -62,14 +62,14 @@ export function withMode(form: RoomForm, mode: GameMode): RoomForm {
 const WHOLE_NUMBER = /^(?:\d+|\d{1,3}([,\s])\d{3}(?:\1\d{3})*)$/;
 
 /** Anything else (e.g. "1,5" or "10,00") is NaN, never silently fixed. */
-function toNumber(raw: string): number {
+export function parseWholeNumber(raw: string): number {
   const s = raw.trim();
   return WHOLE_NUMBER.test(s) ? Number(s.replace(/[,\s]/g, '')) : Number.NaN;
 }
 
 function chipError(raw: string): string | null {
   if (raw.trim() === '') return 'Enter an amount.';
-  const n = toNumber(raw);
+  const n = parseWholeNumber(raw);
   if (Number.isNaN(n)) return 'Use whole numbers only.';
   if (n < 1) return 'Must be at least 1.';
   if (n > MAX_CHIPS) return `Can't be more than ${MAX_CHIPS.toLocaleString('en-US')}.`;
@@ -86,7 +86,7 @@ export function validateRoomForm(form: RoomForm): FormResult {
     if (message) errors[field] = message;
   }
   if (form.blindIncreaseOn) {
-    const n = toNumber(form.blindIncreaseMinutes);
+    const n = parseWholeNumber(form.blindIncreaseMinutes);
     if (!(n >= 1 && n <= MAX_BLIND_INCREASE_MINUTES)) {
       errors.blindIncreaseMinutes = `Enter 1 to ${MAX_BLIND_INCREASE_MINUTES} minutes.`;
     }
@@ -94,13 +94,13 @@ export function validateRoomForm(form: RoomForm): FormResult {
 
   const candidate = {
     mode: form.mode,
-    minBuyIn: toNumber(form.minBuyIn),
-    maxBuyIn: form.maxBuyIn.trim() === '' ? null : toNumber(form.maxBuyIn),
-    smallBlind: toNumber(form.smallBlind),
-    bigBlind: toNumber(form.bigBlind),
+    minBuyIn: parseWholeNumber(form.minBuyIn),
+    maxBuyIn: form.maxBuyIn.trim() === '' ? null : parseWholeNumber(form.maxBuyIn),
+    smallBlind: parseWholeNumber(form.smallBlind),
+    bigBlind: parseWholeNumber(form.bigBlind),
     maxSeats: form.maxSeats,
     turnTimerSeconds: form.turnTimerSeconds,
-    blindIncreaseMinutes: form.blindIncreaseOn ? toNumber(form.blindIncreaseMinutes) : null,
+    blindIncreaseMinutes: form.blindIncreaseOn ? parseWholeNumber(form.blindIncreaseMinutes) : null,
   };
   // Cross-field rules are checked here too, so they show even while another field is invalid.
   if (!errors.minBuyIn && !errors.maxBuyIn && candidate.maxBuyIn !== null) {
