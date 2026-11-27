@@ -58,6 +58,8 @@ export interface JoinServiceDeps {
   broadcaster: Pick<StateBroadcaster, 'sendTo' | 'isStale' | 'forget'>;
   /** null: no service key, so new requests cannot be labelled with a username. */
   db: Db | null;
+  /** Somebody admitted has just entered the room (keepAlive.ts). */
+  onEntered?: (code: RoomCode) => void;
   timers?: Timers;
   newId?: () => string;
   presenceDebounceMs?: number;
@@ -83,6 +85,7 @@ export class JoinService {
   private readonly registry: RoomRegistry;
   private readonly broadcaster: JoinServiceDeps['broadcaster'];
   private readonly db: Db | null;
+  private readonly onEntered: JoinServiceDeps['onEntered'];
   private readonly timers: Timers;
   private readonly newId: () => string;
   private readonly expiryTimers = new Map<RoomCode, unknown>();
@@ -99,6 +102,7 @@ export class JoinService {
     this.registry = deps.registry;
     this.broadcaster = deps.broadcaster;
     this.db = deps.db;
+    this.onEntered = deps.onEntered;
     this.timers = deps.timers ?? realTimers;
     this.newId = deps.newId ?? randomUUID;
     this.presenceDebounceMs = deps.presenceDebounceMs ?? PRESENCE_DEBOUNCE_MS;
@@ -366,6 +370,8 @@ export class JoinService {
     void socket.join([roomChannel(code), memberChannel(code, userId)]);
     socket.data.roomCode = code;
     socket.data.session = session;
+    // At once, not at the next sweep: a room reconnected to may be close to expiring.
+    this.onEntered?.(code);
     if (room.hostId === userId) {
       socket.emit('host:inbox', hostInbox(room, this.timers.now()));
       socket.emit('host:members', { members: hostMembers(room) });

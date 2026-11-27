@@ -149,11 +149,13 @@ Test priorities: side pots with 3+ all-ins, split pots, min-raise edge cases, he
 ### Persistence (Redis)
 | Key | Value | TTL |
 |---|---|---|
-| `room:{code}` | Room state above (settings, seats, stacks, host, admitted, requests, ledger) | 2h, refreshed on activity |
+| `room:{code}` | Room state above (settings, seats, stacks, host, admitted, requests, ledger) | 2h, refreshed on activity and while an admitted user is connected |
 | `room:{code}:hand` | Current `HandState` (incl. deck in online mode) | Deleted at hand end |
 | `user:{userId}:room` | Room code the user is seated in | Same as room |
 
 On server boot, the registry lazily rehydrates an actor from Redis when the first socket for that room connects. Timers resume from stored deadlines (epoch ms), not from remaining-seconds counters.
+
+- **Keep-alive:** a connected room (not an ended one) has its TTL refreshed on `room:enter` and every 5 minutes (`EXPIRE`, so a gone room stays gone), along with its members' open-rooms sets.
 
 ### Scaling
 v1 runs **one server instance**, because the in-process actor model requires all of a room's sockets to reach the same process. To scale out later: add the Socket.io Redis adapter plus routing by room code. That isn't needed at friends-and-home-games scale.

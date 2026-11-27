@@ -224,9 +224,16 @@ export class RoomStore {
     if (ok !== 'OK') throw new RoomGoneError();
   }
 
-  /** Refresh the TTL on activity. */
-  async touch(code: RoomCode): Promise<boolean> {
-    return (await bounded(() => this.redis.expire(roomKey(code), ROOM_TTL_SECONDS))) === 1;
+  /**
+   * Refresh the room's TTL; false (and nothing else is touched) when its key is gone. `userIds`:
+   * their open-rooms sets, which must not expire before a room they list, or the per-host limit
+   * would forget it.
+   */
+  async touch(code: RoomCode, userIds: readonly string[] = []): Promise<boolean> {
+    const refresh = (key: string) => bounded(() => this.redis.expire(key, ROOM_TTL_SECONDS));
+    if ((await refresh(roomKey(code))) !== 1) return false;
+    await Promise.all(userIds.map((id) => refresh(userRoomsKey(id))));
+    return true;
   }
 }
 

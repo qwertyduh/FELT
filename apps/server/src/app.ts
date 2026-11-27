@@ -27,6 +27,7 @@ import { GameService } from './rooms/gameService';
 import { TopUpService } from './rooms/topUpService';
 import { HostService } from './rooms/hostService';
 import { PresenceService } from './rooms/presenceService';
+import { KeepAliveService } from './rooms/keepAlive';
 import { StateBroadcaster } from './rooms/broadcaster';
 import { roomChannel } from './realtime/channels';
 
@@ -58,6 +59,8 @@ export interface AppDeps {
   roomTimers?: Timers;
   /** How long a departure waits before it is published (default 2s). */
   presenceDebounceMs?: number;
+  /** How often connected rooms have their TTL refreshed (default 5 min). */
+  keepAliveMs?: number;
 }
 
 /**
@@ -198,32 +201,35 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
     hosts?: HostService;
     presence?: PresenceService;
   } = {};
-  const roomRegistry: RoomRegistry | null =
+  const roomStore =
     typeof r.get === 'function' && typeof r.set === 'function'
-      ? new RoomRegistry(new RoomStore(r as RoomRedis), {
-          // Rooms with admitted sockets in them are never evicted.
-          isRoomActive: (code) => app.realtime.io.sockets.adapter.rooms.has(roomChannel(code)),
-          actor: {
-            onCommit: (room, before) => {
-              // First: it takes removed players out of the room before anything more is sent.
-              late.hosts?.committed(room, before);
-              broadcaster.publish(room);
-              late.games?.committed(room, before);
-              late.topUps?.committed(room, before);
-              late.presence?.committed(room);
-            },
-            onCommitError: (err, room) =>
-              app.log.error(
-                { code: room.code, err: err instanceof Error ? err.name : 'unknown' },
-                'room commit hook failed',
-              ),
-          },
-          onLoad: (room) => {
-            late.games?.loaded(room);
-            late.presence?.loaded(room);
-          },
-        })
+      ? new RoomStore(r as RoomRedis)
       : null;
+  const roomRegistry: RoomRegistry | null = roomStore
+    ? new RoomRegistry(roomStore, {
+        // Rooms with admitted sockets in them are never evicted.
+        isRoomActive: (code) => app.realtime.io.sockets.adapter.rooms.has(roomChannel(code)),
+        actor: {
+          onCommit: (room, before) => {
+            // First: it takes removed players out of the room before anything more is sent.
+            late.hosts?.committed(room, before);
+            broadcaster.publish(room);
+            late.games?.committed(room, before);
+            late.topUps?.committed(room, before);
+            late.presence?.committed(room);
+          },
+          onCommitError: (err, room) =>
+            app.log.error(
+              { code: room.code, err: err instanceof Error ? err.name : 'unknown' },
+              'room commit hook failed',
+            ),
+        },
+        onLoad: (room) => {
+          late.games?.loaded(room);
+          late.presence?.loaded(room);
+        },
+      })
+    : null;
   app.decorate('roomRegistry', roomRegistry);
   app.addHook('onClose', async () => {
     await roomRegistry?.dispose();
@@ -231,12 +237,21 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
   registerAuth(app, verify); // after CORS (preflight is answered first); default-deny from here on
   registerHealth(app, deps.redis);
   const db = deps.db !== undefined ? deps.db : createDbFromEnv(env);
-  if (roomRegistry) {
+  if (roomRegistry && roomStore) {
+    const keepAlive = new KeepAliveService({
+      io: app.realtime.io,
+      registry: roomRegistry,
+      store: roomStore,
+      log: app.log,
+      ...(deps.keepAliveMs === undefined ? {} : { intervalMs: deps.keepAliveMs }),
+    });
+    app.addHook('onClose', async () => keepAlive.close());
     const joins = new JoinService({
       io: app.realtime.io,
       registry: roomRegistry,
       broadcaster,
       db,
+      onEntered: (code) => void keepAlive.refresh(code),
       ...(deps.roomTimers ? { timers: deps.roomTimers } : {}),
       ...(deps.presenceDebounceMs === undefined
         ? {}
