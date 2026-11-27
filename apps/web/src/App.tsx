@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router';
 import { RouteGuard } from './components/RouteGuard';
+import { CreateRoom } from './routes/CreateRoom';
 import { Home } from './routes/Home';
 import { Learn } from './routes/Learn';
 import { NotFound } from './routes/NotFound';
@@ -24,6 +25,7 @@ export function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/onboarding" element={<Onboarding />} />
+            <Route path="/new" element={<CreateRoom />} />
             <Route path="/r/:code" element={<Room />} />
             <Route path="/practice" element={<Practice />} />
             <Route path="/learn" element={<Learn />} />

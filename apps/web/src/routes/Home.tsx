@@ -12,6 +12,12 @@ export function Home() {
       <div className="mt-4">
         <AuthStatus />
       </div>
+      <Link
+        to="/new"
+        className="mt-6 flex min-h-14 items-center justify-center rounded-2xl bg-brass px-4 text-lg font-semibold text-felt-950 active:brightness-90"
+      >
+        Create room
+      </Link>
       <nav className="mt-6 flex flex-col gap-2 underline">
         <Link to="/onboarding">Onboarding</Link>
         <Link to="/practice">Practice</Link>

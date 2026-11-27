@@ -285,10 +285,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** unit tests cover out-of-order versions being dropped.
 - _Note: GO round 1. apps/web/src/lib/realtime: `createSocketClient` (the auth callback fetches a fresh token on every connect attempt; unauthorized/token_expired → refresh once and retry, up to 3 failures then an error state; auth_unavailable → backoff, never signs out; proactive reconnect 5 min before exp; `emitWithAck` times out to an error result instead of hanging), `useRoomStore` (applies room:state only for a newer version, schema-validated; hand:private is cleared when the hand changes), `bindRoomEvents`. Not connected anywhere yet: P36 will call connect. Verified against the real server: reconnect backoff has no storm, bad token stops after 3 refreshes. Follow-ups (non-blocking): the timeout ack uses a cast because 'timeout' isn't a protocol ErrorCode; hand:private arriving before its room:state would be dropped if the server ever orders them that way; real server-side disconnect at exp isn't tested end to end._
 
-### ⬜ P35 · Web: create room screen
+### ✅ P35 · Web: create room screen
 - **Needs:** P27, P34
 - **Do:** A form for mode, min/max buy-in, blinds, seats, timer and blind increase (defaults from PRD §5.2). Submitting goes to the room.
 - **Done when:** Playwright creates a room as a guest; a 375px screenshot.
+- _Note: GO round 1. `/new` route (routes/CreateRoom.tsx, lib/createRoom.ts). Hybrid is preselected; Online can be chosen but is not playable until Stage D. Blind increase has only off / every N minutes: nothing says by how much blinds rise (owner decision). Follow-ups fixed in P36: no automatic 503 retry on POST /rooms (could orphan rooms), scroll invalid fields into view, reject malformed number grouping. Open: create can be repeated via Back; no request timeout._
 
 ### ⬜ P36 · Web: join flow
 - **Needs:** P30, P34
