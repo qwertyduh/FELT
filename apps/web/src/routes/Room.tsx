@@ -264,7 +264,13 @@ function EnteredScreen({
           </Note>
         </Screen>
       )}
-      <HostInbox userId={userId} ready={online} client={client} />
+      {/* P40: put the action bar after the inbox, so that nothing above can move it. */}
+      <HostInbox
+        userId={userId}
+        ready={online}
+        client={client}
+        compact={room !== null && room.status !== 'lobby'}
+      />
     </div>
   );
 }

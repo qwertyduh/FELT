@@ -1,10 +1,12 @@
 /**
- * The waiting room (P38): seat map, buy-in, and the host's Start. Everything sits in normal flow
- * (nothing floats over the host's request cards below). Nothing is sent before `ready`, and every
- * send waits for its ack; the seats themselves only ever change through `room:state`.
+ * The room once admitted (P38, P39): the seat map in the lobby and the table once the game has
+ * started, plus buy-in and the host's Start. People without a seat (late joiners, returners) take
+ * one from either. Everything sits in normal flow (nothing floats over the host's request cards
+ * below). Nothing is sent before `ready`, and every send waits for its ack; the seats themselves
+ * only ever change through `room:state`.
  *
- * Once the game has started it stays only for people without a seat (late joiners, returners);
- * the table itself is P39.
+ * Renders two siblings: a top part that gives up height (and scrolls) when the request cards are
+ * up, and a footer that stays whole, so Start and the buy-in panel are never pushed out of view.
  */
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
@@ -19,10 +21,12 @@ import {
   startFailure,
   type Returning,
 } from '../lib/seating';
+import { useStillCards } from '../lib/useStillCards';
 import { InviteButton } from './InviteButton';
 import { SeatMap } from './SeatMap';
+import { Table, TableSummary } from './Table';
 
-/** A Start button that has just appeared may be under a tap meant for something else. */
+/** A Start button that has just appeared or moved may be under a tap meant for something else. */
 export const START_ARM_MS = 600;
 
 const PRIMARY =
@@ -31,12 +35,12 @@ const SECONDARY =
   'min-h-14 rounded-2xl border border-brass px-4 text-lg font-semibold text-brass active:brightness-90';
 
 /**
- * While the host's request cards (HostInbox, the next sibling) are up, this part scrolls inside
- * whatever height the screen has left, so a card is always in view and nothing is laid over
- * anything. A zero basis (not 0%) keeps its content from stretching the page.
+ * While the host's request cards (HostInbox, a later sibling) are up, the top part scrolls inside
+ * whatever height the screen has left, so nothing is laid over anything. A zero basis (not 0%)
+ * keeps its content from stretching the page.
  */
 const ABOVE_REQUESTS =
-  '[&:has(~section)]:min-h-40 [&:has(~section)]:basis-0 [&:has(~section)]:overflow-y-auto';
+  '[&:has(~[data-testid=host-inbox])]:min-h-24 [&:has(~[data-testid=host-inbox])]:basis-0 [&:has(~[data-testid=host-inbox])]:overflow-y-auto';
 
 type Client = Pick<SocketClient, 'emitWithAck'>;
 
@@ -138,18 +142,15 @@ function BuyInForm({
 }
 
 function StartButton({ ready, client }: { ready: boolean; client: Client }) {
-  const [armed, setArmed] = useState(false);
+  const { list, held, isStill } = useStillCards<HTMLDivElement>(true, START_ARM_MS);
+  /** Whether the current press began on this button while it could be tapped. */
+  const pressed = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sending = useRef(false);
 
-  useEffect(() => {
-    const id = setTimeout(() => setArmed(true), START_ARM_MS);
-    return () => clearTimeout(id);
-  }, []);
-
   async function start() {
-    if (sending.current || !ready) return;
+    if (sending.current || !ready || !isStill('start')) return;
     sending.current = true;
     setBusy(true);
     setError(null);
@@ -160,17 +161,26 @@ function StartButton({ ready, client }: { ready: boolean; client: Client }) {
   }
 
   return (
-    <>
+    <div ref={list} className="flex flex-col gap-2">
       {error && <Problem>{error}</Problem>}
       <button
         type="button"
+        data-card="start"
         className={PRIMARY}
-        disabled={!ready || !armed || busy}
-        onClick={() => void start()}
+        disabled={!ready || held.has('start') || busy}
+        onPointerDown={() => (pressed.current = isStill('start'))}
+        onPointerCancel={() => (pressed.current = false)}
+        onClick={(e) => {
+          // A touch click can land where the finger lifts, not where it came down, so the press
+          // must have started here. `detail` 0 is the keyboard: there is no press to compare.
+          const began = pressed.current;
+          pressed.current = false;
+          if (e.detail === 0 || began) void start();
+        }}
       >
         {busy ? 'Starting…' : 'Start game'}
       </button>
-    </>
+    </div>
   );
 }
 
@@ -253,9 +263,8 @@ export function WaitingRoom({
   const eligible = room.seats.filter((s) => s && !s.sittingOut && s.stack > 0).length;
   // Not started yet, or play stopped for lack of players (the host starts it again).
   const startable = room.status === 'lobby' || (room.status === 'playing' && room.hand === null);
-  const onTable = started && mine !== null;
 
-  const title = onTable ? 'Game on' : hosting ? "You're hosting" : "You're in";
+  const title = started && mine ? 'Game on' : hosting ? "You're hosting" : "You're in";
 
   function status() {
     if (room.status === 'ended') return <Hint>This game has ended.</Hint>;
@@ -296,35 +305,39 @@ export function WaitingRoom({
     return <Hint>Tap an open seat to sit down.</Hint>;
   }
 
+  const blinds = (
+    <span data-testid="blinds">
+      Blinds {chips(room.settings.smallBlind)} / {chips(room.settings.bigBlind)}
+    </span>
+  );
+  const seats = { room, userId, selected, onPick: canSit ? pick : null };
+
   return (
-    <div className={`flex flex-1 flex-col gap-2 ${ABOVE_REQUESTS}`}>
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-1">
-        <h1 className="font-display text-2xl font-semibold text-cream">{title}</h1>
-        <InviteButton code={room.code} />
-      </div>
-      <p className="flex flex-wrap justify-between gap-x-3 text-sm text-brass tabular-nums">
-        <span data-testid="blinds">
-          Blinds {chips(room.settings.smallBlind)} / {chips(room.settings.bigBlind)}
-        </span>
-        <span>Buy-in {buyInRange(room.settings)}</span>
-      </p>
-
-      {onTable ? (
-        <div
-          data-testid="game-placeholder"
-          className="flex flex-1 flex-col items-center justify-center gap-2 text-center"
-        >
-          <p className="text-lg text-cream">
-            Seat {mine.seat + 1} · <span className="tabular-nums">{chips(mine.stack)}</span> chips
-          </p>
-          <Hint>The game has started. The table view is coming soon.</Hint>
+    <>
+      <div className={`flex flex-1 flex-col gap-2 ${ABOVE_REQUESTS}`}>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-1">
+          <h1 className={started ? 'sr-only' : 'font-display text-2xl font-semibold text-cream'}>
+            {title}
+          </h1>
+          {started && <p className="text-sm text-brass tabular-nums">{blinds}</p>}
+          <InviteButton code={room.code} />
         </div>
-      ) : (
-        <SeatMap room={room} userId={userId} selected={selected} onPick={canSit ? pick : null} />
-      )}
+        {started ? (
+          <Table {...seats} />
+        ) : (
+          <>
+            <p className="flex flex-wrap justify-between gap-x-3 text-sm text-brass tabular-nums">
+              {blinds}
+              <span>Buy-in {buyInRange(room.settings)}</span>
+            </p>
+            <SeatMap {...seats} />
+          </>
+        )}
+      </div>
 
-      {/* A steady height, so the request cards below move as little as possible. */}
-      <div className="mt-auto flex min-h-18 shrink-0 flex-col justify-end gap-2">
+      {/* In the lobby a steady height, so what is around it moves as little as possible. */}
+      <div className={`flex shrink-0 flex-col justify-end gap-2 pt-2 ${started ? '' : 'min-h-18'}`}>
+        {started && <TableSummary room={room} userId={userId} />}
         {notice && <Problem>{notice}</Problem>}
         {selected !== null && canSit ? (
           <BuyInForm
@@ -349,6 +362,6 @@ export function WaitingRoom({
           status()
         )}
       </div>
-    </div>
+    </>
   );
 }

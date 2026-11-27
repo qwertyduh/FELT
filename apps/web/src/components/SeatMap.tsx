@@ -3,7 +3,7 @@
  * seats are buttons only while the viewer may take one.
  */
 import type { PublicRoomState, PublicSeat } from '@felt/protocol';
-import { chips } from '../lib/seating';
+import { chips, shortChips } from '../lib/seating';
 
 /** Fixed box so nine seats never overlap on a 320px screen. */
 const SEAT =
@@ -20,11 +20,6 @@ function place(index: number, count: number) {
     top: `calc((100% - 3.25rem) * ${y.toFixed(4)})`,
   };
 }
-
-const short = (n: number) =>
-  n < 1_000_000
-    ? chips(n)
-    : new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
 
 function Taken({
   seat,
@@ -60,7 +55,7 @@ function Taken({
       <span className={`line-clamp-2 w-full break-all ${me ? 'text-brass' : 'text-cream'}`}>
         {seat.username}
       </span>
-      <span className="text-cream/75 tabular-nums">{short(seat.stack)}</span>
+      <span className="text-cream/75 tabular-nums">{shortChips(seat.stack)}</span>
     </li>
   );
 }

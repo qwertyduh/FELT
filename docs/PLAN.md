@@ -309,10 +309,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** Playwright shows 3 players seated and the host starting the game.
 - _Note: Built and tested (GO). Invite button shown to all admitted players; seats are fixed positions 1-9. A returning leaver learns the exact re-sit amount from the server refusal text (a protocol field would be sturdier). No phase owns a Leave / Sit out button yet. Carry to P39/P40: an arriving request card pushes the buy-in panel and Start out of view; Start tap guard arms on mount only._
 
-### ⬜ P39 · Web: table view
+### ✅ P39 · Web: table view
 - **Needs:** P38
 - **Do:** Render seats, usernames, stacks, current bets, pot(s), dealer button and the turn highlight from `room:state`. Read-only.
 - **Done when:** screenshots at 375px with 2, 6 and 9 players.
+- _Note: GO. Seats keep fixed positions (own seat not rotated to the bottom: owner call). No SB/BB markers. P42 must take a server fix: the pot reads low when a player leaves mid-street (departed bets are not in room:state); it must land before any Leave or kick UI (P44). Folded into P40: lost all-in shows All-in at hand over, stale Start press ref, table with a request card plus action bar is tight._
 
 ### ⬜ P40 · Web: action bar
 - **Needs:** P39, P33

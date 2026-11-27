@@ -7,6 +7,12 @@ import { parseWholeNumber } from './createRoom';
 
 export const chips = (n: number) => n.toLocaleString('en-US');
 
+/** For narrow boxes: exact below `from`, then "1.5M" and the like. */
+export const shortChips = (n: number, from = 1_000_000) =>
+  n < from
+    ? chips(n)
+    : new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+
 export function buyInRange({ minBuyIn, maxBuyIn }: RoomSettings): string {
   return maxBuyIn === null
     ? `${chips(minBuyIn)} or more`

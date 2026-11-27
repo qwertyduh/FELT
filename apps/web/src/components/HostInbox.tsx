@@ -10,70 +10,17 @@
  * on the button it ends on: a touch browser aims the click by where the finger lifts, which may be
  * long after the card under the finger changed.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
-import { flushSync } from 'react-dom';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { ErrorCode } from '@felt/protocol';
 import { removeJoinRequest, useRoomStore } from '../lib/realtime/roomStore';
 import type { SocketClient } from '../lib/realtime/socketClient';
+import { useStillCards } from '../lib/useStillCards';
 
 export const SETTLE_MS = 400;
 export const NOTICE_MS = 4_000;
 
 const BUTTON = 'min-h-12 flex-1 rounded-xl px-3 text-base font-semibold active:brightness-90';
 const CARD = 'rounded-2xl border border-brass-dim bg-felt-950 p-3';
-
-/**
- * Which cards may not be tapped yet. Positions are read from the screen itself (after every render,
- * every frame and again at the tap), so no cause of movement needs to be known: pushes, expiry,
- * another tab, scrolling, resizing or content around the inbox.
- */
-function useStillCards(active: boolean) {
-  const list = useRef<HTMLUListElement>(null);
-  const seen = useRef(new Map<string, { top: number; left: number; until: number }>());
-  const [held, setHeld] = useState('');
-
-  const measure = useCallback(() => {
-    const now = performance.now(); // monotonic: a clock set back cannot stretch a hold
-    const present = new Set<string>();
-    const waiting: string[] = [];
-    for (const el of list.current?.querySelectorAll<HTMLElement>('[data-card]') ?? []) {
-      const id = el.dataset.card!;
-      const { top, left } = el.getBoundingClientRect();
-      let card = seen.current.get(id);
-      if (!card || Math.abs(card.top - top) > 1 || Math.abs(card.left - left) > 1) {
-        card = { top, left, until: now + SETTLE_MS };
-        seen.current.set(id, card);
-      }
-      present.add(id);
-      if (card.until > now) waiting.push(id);
-    }
-    for (const id of seen.current.keys()) if (!present.has(id)) seen.current.delete(id);
-    setHeld(waiting.join(' '));
-  }, []);
-
-  // Before paint, so a card is never shown tappable in a place it has only just reached.
-  useLayoutEffect(measure);
-
-  useEffect(() => {
-    if (!active) return;
-    let frame = requestAnimationFrame(function tick() {
-      flushSync(measure);
-      frame = requestAnimationFrame(tick);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [active, measure]);
-
-  return {
-    list,
-    held: new Set(held.split(' ')),
-    /** Asked at the moment of the tap, in case the card moved since the last frame. */
-    isStill(id: string): boolean {
-      measure();
-      const card = seen.current.get(id);
-      return card !== undefined && card.until <= performance.now();
-    },
-  };
-}
 
 function failure(code: ErrorCode | 'timeout'): string {
   if (code === 'rate_limited') return 'Too many taps. Wait a moment and try again.';
@@ -84,11 +31,14 @@ export function HostInbox({
   userId,
   ready,
   client,
+  compact = false,
 }: {
   userId: string;
   /** True only after the `room:enter` ack: nothing may be sent before. */
   ready: boolean;
   client: Pick<SocketClient, 'emitWithAck'>;
+  /** The table is on screen: only as tall as one card, so the felt keeps its room. */
+  compact?: boolean;
 }) {
   const hosting = useRoomStore((s) => s.room?.hostId === userId);
   const seats = useRoomStore((s) => s.room?.seats);
@@ -105,7 +55,7 @@ export function HostInbox({
   }, [notice]);
 
   const count = joinRequests.length + topUpRequests.length;
-  const { list, held, isStill } = useStillCards(hosting && count > 0);
+  const { list, held, isStill } = useStillCards<HTMLUListElement>(hosting && count > 0, SETTLE_MS);
   /** The button the current press started on, if its card could be tapped then. */
   const pressed = useRef<{ requestId: string; approve: boolean } | null>(null);
 
@@ -151,7 +101,7 @@ export function HostInbox({
     <section
       aria-label="Requests"
       data-testid="host-inbox"
-      className="flex h-[max(40dvh,13rem)] shrink-0 flex-col gap-2 pt-2"
+      className={`flex shrink-0 flex-col gap-2 pt-2 ${compact ? 'h-46' : 'h-[max(40dvh,13rem)]'}`}
     >
       {/* Fixed height: a notice must not push the cards. */}
       <div className="flex h-10 shrink-0 items-end">
