@@ -23,6 +23,7 @@ import {
 } from '../lib/seating';
 import { usePressGuard } from '../lib/usePressGuard';
 import { useStillCards } from '../lib/useStillCards';
+import { BuyMore } from './BuyMore';
 import { RoomLog } from './hybrid/RoomLog';
 import { InviteButton } from './InviteButton';
 import { SeatMap } from './SeatMap';
@@ -71,7 +72,7 @@ function BuyInForm({
   room: PublicRoomState;
   seat: number;
   value: string;
-  /** The only amount allowed (returning player), or null. */
+  /** The only amount allowed (returning player; 0 if they left busted), or null. */
   exact: number | null;
   error: string | null;
   disabled: boolean;
@@ -107,10 +108,16 @@ function BuyInForm({
           </p>
         )}
       </div>
-      {exact !== null && (
+      {exact !== null && exact > 0 && (
         <p id="buy-in-range" className="text-sm text-cream">
           You left this game with <strong className="text-brass">{chips(exact)}</strong> chips. You
           can only sit back down with exactly that.
+        </p>
+      )}
+      {exact === 0 && (
+        <p id="buy-in-range" className="text-sm text-cream">
+          You left this game with no chips. Sit down with <strong className="text-brass">0</strong>,
+          then tap Buy more to ask the host for chips.
         </p>
       )}
       <input
@@ -204,8 +211,9 @@ export function WaitingRoom({
   const mine = room.seats.find((s) => s?.userId === userId) ?? null;
   const started = room.status !== 'lobby';
   const full = room.seats.every(Boolean);
-  const busted = returning?.kind === 'busted';
-  const canSit = !mine && !busted && room.status !== 'ended';
+  /** The only amount a returning player may sit with: what they left with (0 if busted). */
+  const exact = returning === null ? null : returning.kind === 'exact' ? returning.amount : 0;
+  const canSit = !mine && room.status !== 'ended';
 
   // The selected seat filled up (or we are seated): the form no longer applies.
   if (selected !== null && !busy && (mine !== null || room.seats[selected] !== null)) {
@@ -228,8 +236,8 @@ export function WaitingRoom({
   async function sit() {
     if (selected === null || sending.current || !ready) return;
     let buyIn: number;
-    if (returning?.kind === 'exact') {
-      buyIn = returning.amount;
+    if (exact !== null) {
+      buyIn = exact;
     } else {
       const parsed = parseBuyIn(value, room.settings);
       if (!parsed.ok) return setError(parsed.message);
@@ -243,11 +251,7 @@ export function WaitingRoom({
     setBusy(false);
     if (res.ok) return setSelected(null);
     const back = returningFrom(res.error);
-    if (back) {
-      setReturning(back);
-      if (back.kind === 'busted') setSelected(null);
-      return;
-    }
+    if (back) return setReturning(back);
     if (res.error.code === 'seat_taken') {
       setSelected(null);
       return setNotice(sitFailure(res.error));
@@ -256,7 +260,10 @@ export function WaitingRoom({
   }
 
   const online = room.settings.mode === 'online';
-  const eligible = room.seats.filter((s) => s && !s.sittingOut && s.stack > 0).length;
+  // Approved top-ups are added before the hand is dealt, so they count.
+  const eligible = room.seats.filter(
+    (s) => s && !s.sittingOut && (s.stack > 0 || (room.pendingTopUps[s.userId] ?? 0) > 0),
+  ).length;
   // Not started yet, or play stopped for lack of players (the host starts it again).
   const startable = room.status === 'lobby' || (room.status === 'playing' && room.hand === null);
 
@@ -264,14 +271,6 @@ export function WaitingRoom({
 
   function status() {
     if (room.status === 'ended') return <Hint>This game has ended.</Hint>;
-    if (busted) {
-      return (
-        <Problem>
-          You left this game with no chips, so you can&apos;t sit back down. Buying more chips
-          isn&apos;t available yet.
-        </Problem>
-      );
-    }
     if (online && hosting) {
       return (
         <p className="text-center text-base text-cream">
@@ -307,6 +306,9 @@ export function WaitingRoom({
     </span>
   );
   const seats = { room, userId, selected, onPick: canSit ? pick : null };
+  const buyMore = mine && room.status !== 'ended' && (
+    <BuyMore room={room} me={mine} ready={ready} client={client} compact={started} />
+  );
 
   return (
     <>
@@ -338,14 +340,14 @@ export function WaitingRoom({
 
       {/* In the lobby a steady height, so what is around it moves as little as possible. */}
       <div className={`flex shrink-0 flex-col justify-end gap-2 pt-2 ${started ? '' : 'min-h-18'}`}>
-        {started && <TableSummary room={room} userId={userId} />}
+        {started && <TableSummary room={room} userId={userId} action={buyMore} />}
         {notice && <Problem>{notice}</Problem>}
         {selected !== null && canSit ? (
           <BuyInForm
             room={room}
             seat={selected}
             value={value}
-            exact={returning?.kind === 'exact' ? returning.amount : null}
+            exact={exact}
             error={error}
             disabled={!ready}
             busy={busy}
@@ -359,6 +361,12 @@ export function WaitingRoom({
             }}
             onSubmit={() => void sit()}
           />
+        ) : !started && buyMore ? (
+          // Side by side: a short screen with a request card has no height to spare.
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">{status()}</div>
+            {buyMore}
+          </div>
         ) : (
           status()
         )}

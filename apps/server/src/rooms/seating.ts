@@ -7,10 +7,14 @@
  * only sit back with exactly the stack they left with (not at all if busted). Leaving in the lobby
  * is a refund (nothing was played), so the next buy-in is a fresh one.
  *
- * Not handled here: leaving while dealt into a running hand (game.ts) and top-ups (P43).
+ * A player who left busted may take a seat again with 0 chips; chips then come only from a top-up
+ * the host approves (topUps.ts, P43).
+ *
+ * Not handled here: leaving while dealt into a running hand (game.ts).
  */
 import type { ErrorCode } from '@felt/protocol';
 import type { RoomRecord } from './roomStore';
+import { dropTopUps } from './topUps';
 
 type Ledger = RoomRecord['ledger'][number];
 
@@ -74,7 +78,13 @@ export function sit(
     return refuse(room, 'seat_taken', 'that seat is taken');
   }
   const back = takenAway(room, who.userId);
-  if (back === 0) return refuse(room, 'forbidden', 'you left with no chips; a top-up is needed');
+  if (back === 0 && want.buyIn !== 0) {
+    return refuse(
+      room,
+      'forbidden',
+      'you left with no chips; sit down with 0 and ask for a top-up',
+    );
+  }
   if (back !== null) {
     if (want.buyIn !== back) {
       return refuse(room, 'invalid_buy_in', `sit back down with the ${back} chips you left with`);
@@ -128,9 +138,10 @@ export function leaveSeat(room: Readonly<RoomRecord>, userId: string, now: numbe
     amount: mine.stack,
     ...(room.status === 'lobby' ? { note: NOTE_REFUND } : {}),
   };
+  const left = dropTopUps(room, userId);
   return done({
-    ...room,
-    seats: room.seats.filter((s) => s !== mine),
-    ledger: [...room.ledger, entry],
+    ...left,
+    seats: left.seats.filter((s) => s !== mine),
+    ledger: [...left.ledger, entry],
   });
 }

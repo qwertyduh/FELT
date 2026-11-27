@@ -232,11 +232,11 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | `room:request_join` | `{ code }` | Anyone not yet admitted |
 | `room:cancel_request` | `{ code }` | Requester |
 | `room:enter` | `{ code }` | Admitted player (incl. on reconnect) |
-| `room:sit` | `{ seat, buyIn }` | Admitted player; `minBuyIn ≤ buyIn ≤ maxBuyIn` |
+| `room:sit` | `{ seat, buyIn }` | Admitted player; `minBuyIn ≤ buyIn ≤ maxBuyIn`. A player returning mid-game brings exactly what they left with (0 if busted; then a top-up) |
 | `room:sit_out` / `room:sit_in` | — | Player |
 | `room:leave` | — | Player |
 | `game:act` | `{ handId, turnSeq, type: 'fold'\|'check'\|'call'\|'bet'\|'raise'\|'all_in', amount? }` | Player on turn; a `turnSeq` older than `room:state` is refused as `stale_hand` |
-| `player:topup_request` | `{ amount }` | Seated player |
+| `player:topup_request` | `{ amount }` | Seated player (the host too); one outstanding per player; `stack + amount ≤ maxBuyIn`, checked again at approval and when applied |
 | `host:admit` | `{ requestId, approve }` | Host |
 | `host:topup` | `{ requestId, approve }` | Host |
 | `host:start` / `host:pause` / `host:resume` / `host:end` | — | Host |
@@ -261,7 +261,8 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | `room:join_decision` | `{ approved, retryAfter? }` | Requester |
 | `host:join_request` | `{ requestId, userId, username }` | Host |
 | `host:topup_request` | `{ requestId, userId, amount }` | Host |
-| `player:topup_decision` | `{ requestId, approved }` | Requester |
+| `player:topup_decision` | `{ requestId, approved, amount, reason? }` (`over_max`: dropped when due) | Requester |
+| `player:topup_status` | `{ pending: { requestId, amount } \| null }` (own unanswered request; on entry and on change) | One player |
 | `room:state` | Full public room + hand state, `version` number | Admitted players |
 | `hand:private` | `{ handId, holeCards }` | One player (online mode) |
 | `hand:result` | Pots, winners, revealed hands | Room |

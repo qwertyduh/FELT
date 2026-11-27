@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  PositiveChipsSchema,
   ROOM_LOG_LIMIT,
   RoomCodeSchema,
   RoomLogEntrySchema,
@@ -20,6 +21,12 @@ const UserId = z.string().min(1).max(64);
 
 /** ARCHITECTURE's ledger kinds plus `cash_out` (chips leaving the table with a player). */
 export const LEDGER_KINDS = ['buy_in', 'top_up', 'adjust', 'hand_result', 'cash_out'] as const;
+
+/** A top-up asked for. The amount never changes: another amount is another request. */
+const TopUpSchema = z
+  .object({ requestId: z.string().min(1).max(64), userId: UserId, amount: PositiveChipsSchema })
+  .strict();
+export type TopUp = z.infer<typeof TopUpSchema>;
 
 /** Server-side room record (`room:{code}`). Later phases extend the sub-shapes. */
 export const RoomRecordSchema = z
@@ -45,6 +52,10 @@ export const RoomRecordSchema = z
         })
         .strict(),
     ),
+    /** Top-ups waiting for the host's answer; one per seated user at most. */
+    topUpRequests: z.array(TopUpSchema).optional(),
+    /** Approved top-ups, added to the stack when the next hand starts. */
+    pendingTopUps: z.array(TopUpSchema).optional(),
     /** Join-denial cooldowns: userId -> epoch ms until which the user may not ask again. */
     denied: z.record(UserId, z.number().int()).optional(),
     seats: z.array(

@@ -333,10 +333,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests for undoing an action mid-street, undo being unavailable after a hand ends, and an adjustment appearing in the ledger; a Playwright test for undo.
 - _Note: GO (Opus tester). Undo keeps the last 10 moves and deals; the history is wiped by hand end, a dealt-in player leaving, and any stack correction to a dealt-in player. Owner to confirm: adjust refused while the target is live in the hand; a hand-ending move cannot be undone; adjust reason is free text with no profanity filter; adjusting to 0 then leaving counts as busted and blocks re-sit. P44 kick must empty the undo history. P43 must handle a busted leaver. P52 must count signed adjust lines. Web and server deploy together._
 
-### ⬜ P43 · Top-ups (buy more)
+### ✅ P43 · Top-ups (buy more)
 - **Needs:** P37, P33
 - **Do:** Server: `player:topup_request` (max buy-in check), `host:topup`, approved amounts queued and applied at the next hand start, ledger `top_up`. UI: a **Buy more** button + amount input, the host card in the inbox, and the decision toast.
 - **Done when:** tests show a top-up approved mid-hand is applied only at the next hand, a decline, and a max-buy-in breach rejected; Playwright covers the end-to-end flow.
+- _Note: GO. Owner to confirm (PRD silent): a busted leaver re-sits with 0 and buys back with host approval; a top-up that would exceed max buy-in when due is dropped whole; the host approves their own top-up; no minimum; one outstanding top-up per player with no cancel; leaving drops it; an offline player misses the decision notice. P44 kick must go through leave and end game must clear the queue. P52 counts top_up lines. Folded into P44: clipped Approve buttons on the worst-case 320px card, toast covers Home, Buy more sheet stays over the action bar when your turn arrives._
 
 ### ⬜ P44 · Host room controls
 - **Needs:** P33

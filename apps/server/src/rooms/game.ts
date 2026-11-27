@@ -32,6 +32,7 @@ import {
 import { UNDO_DEPTH, type Game, type GameHand, type UndoEntry } from './gameSchema';
 import type { RoomRecord } from './roomStore';
 import { leaveSeat, type SeatResult } from './seating';
+import { applyTopUps, dropTopUps } from './topUps';
 
 export const NEXT_HAND_DELAY_MS = 5_000;
 
@@ -204,8 +205,12 @@ function advanceTo(
   return state.street === 'ended' ? finishHand(next, now) : next;
 }
 
-/** Deal a hand to everyone seated with chips and not sitting out. */
-function deal(room: Readonly<RoomRecord>, ctx: GameContext): Result<RoomRecord> {
+/**
+ * Deal a hand to everyone seated with chips and not sitting out. Approved top-ups are added first,
+ * as part of the same change: if no hand can be dealt, they stay queued.
+ */
+function deal(before: Readonly<RoomRecord>, ctx: GameContext): Result<RoomRecord> {
+  const room = applyTopUps(before, ctx.now);
   const { maxSeats, smallBlind, bigBlind } = room.settings;
   const last = room.game?.button ?? null;
   const seats = Array.from({ length: maxSeats }, (_, i) => {
@@ -600,7 +605,7 @@ export function leave(room: Readonly<RoomRecord>, userId: string, now: number): 
   if (player.status !== 'folded') {
     if (handStaysLive(state, player.seat, player.status)) {
       return done({
-        ...room,
+        ...dropTopUps(room, userId),
         // As for any departure: no undo goes back past it.
         game: { ...room.game!, hand: { ...hand, undo: [] } },
         seats: room.seats.map((s) =>

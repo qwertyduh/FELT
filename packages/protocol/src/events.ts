@@ -116,7 +116,11 @@ export const clientEventSchemas = {
   /** Names the room: a user's requests elsewhere stay pending. */
   'room:cancel_request': z.object({ code: RoomCodeSchema }).strict(),
   'room:enter': z.object({ code: RoomCodeSchema }).strict(),
-  'room:sit': z.object({ seat: SeatIndexSchema, buyIn: PositiveChipsSchema }).strict(),
+  /**
+   * `buyIn` 0 is only for a player who left busted and is taking a seat again: they then ask the
+   * host for chips with `player:topup_request`. The server refuses 0 from anyone else.
+   */
+  'room:sit': z.object({ seat: SeatIndexSchema, buyIn: ChipsSchema }).strict(),
   'room:sit_out': NoPayload,
   'room:sit_in': NoPayload,
   'room:leave': NoPayload,
@@ -293,7 +297,25 @@ export const serverEventSchemas = {
   'host:join_request': JoinRequestSchema,
   'host:topup_request': TopUpRequestSchema,
   'host:inbox': HostInboxSchema,
-  'player:topup_decision': z.object({ requestId, approved: z.boolean() }).strict(),
+  /**
+   * To the requester. `reason: 'over_max'`: not added, because by the time it was due it would
+   * have taken the stack over the maximum buy-in.
+   */
+  'player:topup_decision': z
+    .object({
+      requestId,
+      approved: z.boolean(),
+      amount: PositiveChipsSchema,
+      reason: z.literal('over_max').optional(),
+    })
+    .strict(),
+  /**
+   * To one player: their own request still waiting for the host, or null. Sent on (re)entry and
+   * on every change (approved amounts are public, in `room:state.pendingTopUps`).
+   */
+  'player:topup_status': z
+    .object({ pending: z.object({ requestId, amount: PositiveChipsSchema }).strict().nullable() })
+    .strict(),
   'room:state': PublicRoomStateSchema,
   'hand:private': PrivateHandSchema,
   'hand:result': HandResultPayloadSchema,

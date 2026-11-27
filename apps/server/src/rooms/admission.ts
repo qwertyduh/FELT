@@ -146,7 +146,16 @@ export function decideJoin(
   };
 }
 
-/** Host-only snapshot. Top-up requests arrive with P43. */
+/** One user's top-up still waiting for the host, as `player:topup_status` carries it. */
+export function ownTopUp(
+  room: Readonly<RoomRecord>,
+  userId: string,
+): ServerEventPayload<'player:topup_status'>['pending'] {
+  const mine = room.topUpRequests?.find((r) => r.userId === userId);
+  return mine ? { requestId: mine.requestId, amount: mine.amount } : null;
+}
+
+/** Host-only snapshot. */
 export function hostInbox(
   room: Readonly<RoomRecord>,
   now: number,
@@ -161,6 +170,8 @@ export function hostInbox(
         username,
         expiresAt,
       })),
-    topUpRequests: [],
+    topUpRequests: (room.topUpRequests ?? [])
+      .slice(0, 50)
+      .map(({ requestId, userId, amount }) => ({ requestId, userId, amount })),
   };
 }

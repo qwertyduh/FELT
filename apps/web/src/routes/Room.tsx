@@ -10,6 +10,7 @@ import {
 } from '@felt/protocol';
 import { ActionBar } from '../components/ActionBar';
 import { HostInbox } from '../components/HostInbox';
+import { TopUpToast } from '../components/TopUpToast';
 import { WaitingRoom } from '../components/WaitingRoom';
 import { apiFetch } from '../lib/api';
 import { useAuthStore } from '../lib/authStore';
@@ -266,6 +267,7 @@ function EnteredScreen({
           </Note>
         </Screen>
       )}
+      <TopUpToast />
       <HostInbox
         userId={userId}
         ready={online}

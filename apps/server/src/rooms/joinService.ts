@@ -22,6 +22,7 @@ import {
   decideJoin,
   hostInbox,
   nextExpiry,
+  ownTopUp,
   pruneExpired,
   requestJoin,
   type JoinRecord,
@@ -311,6 +312,7 @@ export class JoinService {
     void socket.join([roomChannel(code), memberChannel(code, userId)]);
     socket.data.roomCode = code;
     if (room.hostId === userId) socket.emit('host:inbox', hostInbox(room, this.timers.now()));
+    socket.emit('player:topup_status', { pending: ownTopUp(room, userId) });
     // If this changes who is connected, publish a new version (which reaches this socket too).
     // Otherwise resend the current one unchanged.
     const published = await this.publishPresence(code);

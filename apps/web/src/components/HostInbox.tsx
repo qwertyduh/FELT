@@ -1,5 +1,5 @@
 /**
- * The host's pending requests as stacked cards (P37). Self-contained: it reads the room store and
+ * The host's pending requests, joins and top-ups, as stacked cards (P37, P43). Self-contained: it reads the room store and
  * answers over the socket it is given, and renders nothing for non-hosts or an empty inbox. It sits
  * in normal flow with its own scroll (never fixed or floating), so whatever is mounted below it,
  * such as the table's action bar, cannot be covered.
@@ -9,10 +9,13 @@
  * whatever reason, takes no taps until it has been still for `SETTLE_MS`. A tap also has to start
  * on the button it ends on: a touch browser aims the click by where the finger lifts, which may be
  * long after the card under the finger changed.
+ *
+ * Cards stay in the order they arrived, whatever their kind. A top-up answer names a request, and a
+ * request's amount never changes, so the amount on the card is the amount approved.
  */
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { ErrorCode } from '@felt/protocol';
-import { removeJoinRequest, useRoomStore } from '../lib/realtime/roomStore';
+import { removeJoinRequest, removeTopUpRequest, useRoomStore } from '../lib/realtime/roomStore';
 import type { SocketClient } from '../lib/realtime/socketClient';
 import { useStillCards } from '../lib/useStillCards';
 
@@ -26,6 +29,12 @@ function failure(code: ErrorCode | 'timeout'): string {
   if (code === 'rate_limited') return 'Too many taps. Wait a moment and try again.';
   return "Couldn't send your answer. Try again.";
 }
+
+type Card = { requestId: string; name: string; own: boolean } & (
+  { kind: 'join' } | { kind: 'topup'; amount: number }
+);
+
+const amount = (n: number) => n.toLocaleString('en-US');
 
 export function HostInbox({
   userId,
@@ -55,6 +64,14 @@ export function HostInbox({
   }, [notice]);
 
   const count = joinRequests.length + topUpRequests.length;
+  /** requestIds in the order first seen: a new card only ever goes below the others. */
+  const [order, setOrder] = useState<readonly string[]>([]);
+  const ids = [...joinRequests, ...topUpRequests].map((r) => r.requestId);
+  const arrived = [
+    ...order.filter((id) => ids.includes(id)),
+    ...ids.filter((id) => !order.includes(id)),
+  ];
+  if (arrived.join('\n') !== order.join('\n')) setOrder(arrived);
   const { list, held, isStill } = useStillCards<HTMLUListElement>(hosting && count > 0, SETTLE_MS);
   /** The button the current press started on, if its card could be tapped then. */
   const pressed = useRef<{ requestId: string; approve: boolean } | null>(null);
@@ -71,30 +88,51 @@ export function HostInbox({
   }, []);
   if (!hosting || (count === 0 && notice === null)) return null;
 
-  async function answer(requestId: string, username: string, approve: boolean) {
+  async function answer({ requestId, kind, name }: Card, approve: boolean) {
     if (!isStill(requestId)) return;
     setNotice(null);
     setBusy((b) => new Set(b).add(requestId));
-    const res = await client.emitWithAck('host:admit', { requestId, approve });
+    const event = kind === 'join' ? 'host:admit' : 'host:topup';
+    const res = await client.emitWithAck(event, { requestId, approve });
     setBusy((b) => new Set([...b].filter((id) => id !== requestId)));
     if (res.ok || res.error.code === 'request_expired') {
-      if (!res.ok) setNotice({ text: `${username}'s request is no longer open.` });
-      removeJoinRequest(requestId);
+      if (!res.ok) setNotice({ text: `${name}'s request is no longer open.` });
+      (kind === 'join' ? removeJoinRequest : removeTopUpRequest)(requestId);
+    } else if (res.error.code === 'invalid_topup') {
+      setNotice({ text: `That would put ${name} over the maximum. Decline it.` });
     } else {
       setNotice({ text: failure(res.error.code) });
     }
   }
 
+  const cards = new Map<string, Card>([
+    ...joinRequests.map(({ requestId, username }): [string, Card] => [
+      requestId,
+      { requestId, kind: 'join', name: username, own: false },
+    ]),
+    ...topUpRequests.map((r): [string, Card] => [
+      r.requestId,
+      {
+        requestId: r.requestId,
+        kind: 'topup',
+        name: seats?.find((x) => x?.userId === r.userId)?.username ?? 'A player',
+        own: r.userId === userId,
+        amount: r.amount,
+      },
+    ]),
+  ]);
+
   const press = (requestId: string, approve: boolean) => () => {
     pressed.current = isStill(requestId) ? { requestId, approve } : null;
   };
-  const click = (requestId: string, username: string, approve: boolean) => (e: MouseEvent) => {
+  const click = (card: Card, approve: boolean) => (e: MouseEvent) => {
+    const { requestId } = card;
     const start = pressed.current;
     pressed.current = null;
     // `detail` 0 is keyboard or assistive tech: no press to compare, and focus never moves to
     // another person's button (each card is its own element).
     if (e.detail !== 0 && (start?.requestId !== requestId || start.approve !== approve)) return;
-    void answer(requestId, username, approve);
+    void answer(card, approve);
   };
 
   return (
@@ -116,62 +154,63 @@ export function HostInbox({
         )}
       </div>
       <ul ref={list} className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-        {joinRequests.map(({ requestId, username }) => {
+        {arrived.map((id) => {
+          const card = cards.get(id)!;
+          const { requestId, kind, name } = card;
           const off = !ready || held.has(requestId) || busy.has(requestId);
+          const [no, yes] =
+            card.kind === 'join'
+              ? [`Deny ${name}`, `Admit ${name}`]
+              : [
+                  `Decline ${amount(card.amount)} more for ${name}`,
+                  `Approve ${amount(card.amount)} more for ${name}`,
+                ];
           return (
             <li
               key={requestId}
               data-card={requestId}
-              data-testid="join-request"
+              data-testid={kind === 'join' ? 'join-request' : 'topup-request'}
               className={`shrink-0 ${CARD}`}
             >
               <p className="text-base wrap-anywhere text-cream">
-                <strong className="font-semibold">{username}</strong> wants to join
+                <strong className="font-semibold">{card.own ? 'You' : name}</strong>{' '}
+                {card.kind === 'join' ? (
+                  'wants to join'
+                ) : (
+                  <>
+                    {card.own ? 'ask' : 'asks'} for{' '}
+                    <strong className="font-semibold text-brass tabular-nums">
+                      {amount(card.amount)}
+                    </strong>{' '}
+                    more chips
+                  </>
+                )}
               </p>
               <div className="mt-2 flex gap-2">
                 <button
                   type="button"
-                  aria-label={`Deny ${username}`}
+                  aria-label={no}
                   className={`${BUTTON} border border-brass text-brass disabled:border-felt-700 disabled:text-cream/30`}
                   disabled={off}
                   onPointerDown={press(requestId, false)}
-                  onClick={click(requestId, username, false)}
+                  onClick={click(card, false)}
                 >
-                  Deny
+                  {kind === 'join' ? 'Deny' : 'Decline'}
                 </button>
                 <button
                   type="button"
-                  aria-label={`Admit ${username}`}
+                  aria-label={yes}
                   className={`${BUTTON} bg-brass text-felt-950 disabled:bg-felt-800 disabled:text-cream/40`}
                   disabled={off}
                   onPointerDown={press(requestId, true)}
-                  onClick={click(requestId, username, true)}
+                  onClick={click(card, true)}
                 >
-                  Admit
+                  {kind === 'join' ? 'Admit' : 'Approve'}
                 </button>
               </div>
             </li>
           );
         })}
-        {topUpRequests.map(({ requestId, userId: from, amount }) => (
-          <li
-            key={requestId}
-            data-card={requestId}
-            data-testid="topup-request"
-            className={`shrink-0 ${CARD}`}
-          >
-            <p className="text-base wrap-anywhere text-cream">
-              <strong className="font-semibold">
-                {seats?.find((s) => s?.userId === from)?.username ?? 'A player'}
-              </strong>{' '}
-              asks for {amount.toLocaleString('en-US')} more chips
-            </p>
-            {/* Placeholder: answering top-ups is P43 (`host:topup`). */}
-            <p className="mt-1 text-sm text-cream/60">
-              Answering top-ups isn&apos;t available yet.
-            </p>
-          </li>
-        ))}
       </ul>
     </section>
   );

@@ -9,6 +9,8 @@ type PrivateHand = Parameters<ServerToClientEvents['hand:private']>[0];
 type HostInbox = Parameters<ServerToClientEvents['host:inbox']>[0];
 type JoinRequest = Parameters<ServerToClientEvents['host:join_request']>[0];
 type TopUpRequest = Parameters<ServerToClientEvents['host:topup_request']>[0];
+type TopUpStatus = Parameters<ServerToClientEvents['player:topup_status']>[0];
+type TopUpDecision = Parameters<ServerToClientEvents['player:topup_decision']>[0];
 
 export interface RoomStoreState {
   room: PublicRoomState | null;
@@ -21,6 +23,10 @@ export interface RoomStoreState {
   invalidDropped: number;
   /** Own hole cards for the current hand only. */
   privateHand: PrivateHand | null;
+  /** Own top-up request still waiting for the host. */
+  topUp: TopUpStatus['pending'];
+  /** The host's latest answer to it, until the toast has been shown. */
+  topUpDecision: TopUpDecision | null;
   hostInbox: {
     joinRequests: (JoinRequest & { expiresAt?: number })[];
     topUpRequests: TopUpRequest[];
@@ -37,6 +43,8 @@ export const initialRoomState: RoomStoreState = {
   needsResync: false,
   invalidDropped: 0,
   privateHand: null,
+  topUp: null,
+  topUpDecision: null,
   hostInbox: emptyInbox,
 };
 
@@ -117,6 +125,27 @@ export function removeJoinRequest(requestId: string): void {
       joinRequests: s.hostInbox.joinRequests.filter((r) => r.requestId !== requestId),
     },
   }));
+}
+
+export function removeTopUpRequest(requestId: string): void {
+  useRoomStore.setState((s) => ({
+    hostInbox: {
+      ...s.hostInbox,
+      topUpRequests: s.hostInbox.topUpRequests.filter((r) => r.requestId !== requestId),
+    },
+  }));
+}
+
+export function applyTopUpStatus({ pending }: TopUpStatus): void {
+  useRoomStore.setState({ topUp: pending });
+}
+
+export function applyTopUpDecision(decision: TopUpDecision): void {
+  useRoomStore.setState({ topUpDecision: decision });
+}
+
+export function clearTopUpDecision(): void {
+  useRoomStore.setState({ topUpDecision: null });
 }
 
 export function markNeedsResync(): void {

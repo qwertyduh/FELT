@@ -24,6 +24,7 @@ import { RoomRegistry } from './rooms/roomRegistry';
 import { JoinService } from './rooms/joinService';
 import { SeatService } from './rooms/seatService';
 import { GameService } from './rooms/gameService';
+import { TopUpService } from './rooms/topUpService';
 import { StateBroadcaster } from './rooms/broadcaster';
 import { roomChannel } from './realtime/channels';
 
@@ -189,7 +190,7 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
   const broadcaster = new StateBroadcaster(app.realtime.io, { log: app.log });
   // Room actors; null when Redis lacks the room commands (same optional pattern as the routes).
   const r = deps.redis as Partial<RoomRedis>;
-  const late: { games?: GameService } = {};
+  const late: { games?: GameService; topUps?: TopUpService } = {};
   const roomRegistry: RoomRegistry | null =
     typeof r.get === 'function' && typeof r.set === 'function'
       ? new RoomRegistry(new RoomStore(r as RoomRedis), {
@@ -199,6 +200,7 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
             onCommit: (room, before) => {
               broadcaster.publish(room);
               late.games?.committed(room, before);
+              late.topUps?.committed(room, before);
             },
             onCommitError: (err, room) =>
               app.log.error(
@@ -243,6 +245,13 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
     late.games = games;
     app.realtime.register(games.register);
     app.addHook('onClose', async () => games.close());
+    const topUps = new TopUpService({
+      io: app.realtime.io,
+      registry: roomRegistry,
+      ...(deps.roomTimers ? { timers: deps.roomTimers } : {}),
+    });
+    late.topUps = topUps;
+    app.realtime.register(topUps.register);
   }
   registerMe(app, db);
   await registerUsernameRoutes(app, db);

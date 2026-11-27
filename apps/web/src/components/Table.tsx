@@ -6,7 +6,7 @@
  * It fills the height its parent can spare (never less than the seats need), so an action bar or
  * the request cards below simply leave it less.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import type { PublicRoomState, PublicSeat } from '@felt/protocol';
 import { chips, shortChips } from '../lib/seating';
 import { potName, potTotal, seatPosition, streetName, turnLine } from '../lib/table';
@@ -256,7 +256,7 @@ export function Table({
   );
 }
 
-function Figure({ label, value, id }: { label: string; value: string; id: string }) {
+function Figure({ label, value, id }: { label: ReactNode; value: string; id: string }) {
   return (
     <div data-testid={id} className="flex min-w-0 items-baseline gap-2">
       <dt className="text-xs text-cream/75">{label}</dt>
@@ -269,7 +269,16 @@ function Figure({ label, value, id }: { label: string; value: string; id: string
  * Below the felt and outside anything that scrolls: whose turn it is and, for a seated player, the
  * pot and their stack (PRD: never hide money). The amount to call is on the action bar.
  */
-export function TableSummary({ room, userId }: { room: PublicRoomState; userId: string }) {
+export function TableSummary({
+  room,
+  userId,
+  action,
+}: {
+  room: PublicRoomState;
+  userId: string;
+  /** Beside the figures of a seated player (Buy more). */
+  action?: ReactNode;
+}) {
   const me = room.seats.find((s) => s?.userId === userId) ?? null;
   const line = turnLine(room, userId);
   const money = (n: number) => shortChips(n, 10_000_000);
@@ -287,10 +296,23 @@ export function TableSummary({ room, userId }: { room: PublicRoomState; userId: 
         {line}
       </p>
       {me && (
-        <dl className="flex flex-wrap justify-center gap-x-6 rounded-xl bg-felt-950 px-2">
-          <Figure id="my-pot" label="Pot" value={money(potTotal(room))} />
-          <Figure id="my-stack" label="Your stack" value={money(me.stack)} />
-        </dl>
+        <div className="flex items-center gap-2">
+          <dl className="flex min-w-0 flex-1 flex-wrap justify-center gap-x-3 rounded-xl bg-felt-950 px-1">
+            <Figure id="my-pot" label="Pot" value={money(potTotal(room))} />
+            <Figure
+              id="my-stack"
+              label={
+                // "Stack" on the narrowest screens, so Buy more fits beside it on one line.
+                <>
+                  <span className="max-[359px]:sr-only">Your </span>
+                  <span className="max-[359px]:capitalize">stack</span>
+                </>
+              }
+              value={money(me.stack)}
+            />
+          </dl>
+          {action}
+        </div>
       )}
     </div>
   );

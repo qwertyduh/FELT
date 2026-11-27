@@ -5,6 +5,8 @@ import {
   applyHostInbox,
   applyPrivateHand,
   applyRoomState,
+  applyTopUpDecision,
+  applyTopUpStatus,
   markNeedsResync,
 } from './roomStore';
 
@@ -25,6 +27,8 @@ export function bindRoomEvents(socket: Listenable): () => void {
   socket.on('host:inbox', applyHostInbox);
   socket.on('host:join_request', addJoinRequest);
   socket.on('host:topup_request', addTopUpRequest);
+  socket.on('player:topup_status', applyTopUpStatus);
+  socket.on('player:topup_decision', applyTopUpDecision);
   socket.on('connect', onConnect);
   return () => {
     socket.off('room:state', onState);
@@ -32,6 +36,8 @@ export function bindRoomEvents(socket: Listenable): () => void {
     socket.off('host:inbox', applyHostInbox);
     socket.off('host:join_request', addJoinRequest);
     socket.off('host:topup_request', addTopUpRequest);
+    socket.off('player:topup_status', applyTopUpStatus);
+    socket.off('player:topup_decision', applyTopUpDecision);
     socket.off('connect', onConnect);
   };
 }
