@@ -6,6 +6,7 @@ import {
   type ClientEventPayload,
   type ClientToServerEvents,
   type ErrorCode,
+  type RoomCode,
   type ServerToClientEvents,
 } from '@felt/protocol';
 import type { Socket } from 'socket.io';
@@ -19,6 +20,10 @@ export interface SocketUser {
 }
 export interface SocketData {
   user: SocketUser;
+  /** The room this socket entered after admission (set only by `room:enter`). */
+  roomCode?: RoomCode;
+  /** Sequence of `room:enter` intents, so a slow earlier one never overrides a later one. */
+  enterSeq?: number;
 }
 export type FeltSocket = Socket<
   ClientToServerEvents,

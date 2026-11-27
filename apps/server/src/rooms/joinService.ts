@@ -1,0 +1,370 @@
+/**
+ * Join requests and admission (P30): `room:request_join`, `room:cancel_request`, `host:admit`,
+ * `room:enter` and request expiry. Every read or change of room state goes through the room's actor
+ * queue. Events and channel joins happen only after the new state is committed, synchronously in the
+ * continuation of `enqueue`, i.e. before the room's next task can start.
+ */
+import { randomUUID } from 'node:crypto';
+import type { Ack, RoomCode, ServerEventPayload } from '@felt/protocol';
+import type { Db } from '../db/supabase';
+import { findUsername } from '../usernames/claim';
+import type { Realtime, Timers } from '../realtime';
+import {
+  errorAck,
+  onClientEvent,
+  type FeltSocket,
+  type SocketRegistrar,
+} from '../realtime/handlers';
+import { joinWaitChannel, memberChannel, roomChannel } from '../realtime/channels';
+import { TokenBucket } from '../realtime/rateLimit';
+import {
+  cancelJoin,
+  decideJoin,
+  hostInbox,
+  nextExpiry,
+  pruneExpired,
+  requestJoin,
+  type JoinRecord,
+} from './admission';
+import { RoomGoneError, type RoomRecord } from './roomStore';
+import type { RoomRegistry } from './roomRegistry';
+
+/** Per user across all sockets (the per-socket bucket alone is reset by reconnecting). */
+export const JOIN_BURST = 10;
+export const JOIN_PER_SEC = 10 / 60;
+const MAX_IDLE_BUCKETS = 1000;
+export const EXPIRY_RETRY_MS = 5_000;
+
+export interface JoinServiceDeps {
+  io: Realtime['io'];
+  registry: RoomRegistry;
+  /** null: no service key, so new requests cannot be labelled with a username. */
+  db: Db | null;
+  timers?: Timers;
+  newId?: () => string;
+}
+
+const realTimers: Timers = {
+  now: () => Date.now(),
+  setTimeout: (fn, ms) => {
+    const h = setTimeout(fn, ms);
+    h.unref();
+    return h;
+  },
+  clearTimeout: (h) => clearTimeout(h as NodeJS.Timeout),
+};
+
+const notFound = () => errorAck('not_found', 'room not found');
+const OK: Ack = { ok: true };
+
+export class JoinService {
+  private readonly io: Realtime['io'];
+  private readonly registry: RoomRegistry;
+  private readonly db: Db | null;
+  private readonly timers: Timers;
+  private readonly newId: () => string;
+  private readonly expiryTimers = new Map<RoomCode, unknown>();
+  /** Rooms each user is waiting on (`room:cancel_request` has no payload). */
+  private readonly waiting = new Map<string, Set<RoomCode>>();
+  /** Keeps one user's request/cancel intents in arrival order. */
+  private readonly chains = new Map<string, Promise<unknown>>();
+  private readonly buckets = new Map<string, { bucket: TokenBucket; used: number }>();
+  private closed = false;
+
+  constructor(deps: JoinServiceDeps) {
+    this.io = deps.io;
+    this.registry = deps.registry;
+    this.db = deps.db;
+    this.timers = deps.timers ?? realTimers;
+    this.newId = deps.newId ?? randomUUID;
+  }
+
+  readonly register: SocketRegistrar = (socket, log) => {
+    onClientEvent(
+      socket,
+      'room:request_join',
+      ({ code }) => this.guard(() => this.requestJoin(socket, code)),
+      log,
+    );
+    onClientEvent(
+      socket,
+      'room:cancel_request',
+      () => this.guard(() => this.cancelRequest(socket)),
+      log,
+    );
+    onClientEvent(
+      socket,
+      'room:enter',
+      ({ code }) => this.guard(() => this.enter(socket, code)),
+      log,
+    );
+    onClientEvent(
+      socket,
+      'host:admit',
+      (p) => this.guard(() => this.admit(socket, p.requestId, p.approve)),
+      log,
+    );
+  };
+
+  close(): void {
+    this.closed = true;
+    for (const h of this.expiryTimers.values()) this.timers.clearTimeout(h);
+    this.expiryTimers.clear();
+  }
+
+  private async guard(fn: () => Promise<Ack>): Promise<Ack> {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err instanceof RoomGoneError) return notFound();
+      throw err; // -> `internal` ack
+    }
+  }
+
+  private serial<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+    const p = (this.chains.get(userId) ?? Promise.resolve()).then(fn, fn);
+    const tail = p
+      .catch(() => undefined)
+      .then(() => {
+        if (this.chains.get(userId) === tail) this.chains.delete(userId);
+      });
+    this.chains.set(userId, tail);
+    return p;
+  }
+
+  private allowJoin(userId: string): boolean {
+    const now = this.timers.now();
+    if (this.buckets.size >= MAX_IDLE_BUCKETS) {
+      const refillMs = (JOIN_BURST / JOIN_PER_SEC) * 1000;
+      for (const [id, b] of this.buckets) if (now - b.used >= refillMs) this.buckets.delete(id);
+    }
+    let entry = this.buckets.get(userId);
+    if (!entry) {
+      entry = {
+        bucket: new TokenBucket(JOIN_PER_SEC, JOIN_BURST, () => this.timers.now()),
+        used: now,
+      };
+      this.buckets.set(userId, entry);
+    }
+    entry.used = now;
+    return entry.bucket.take();
+  }
+
+  private requestJoin(socket: FeltSocket, code: RoomCode): Promise<Ack> {
+    const { userId } = socket.data.user;
+    if (!this.allowJoin(userId)) {
+      return Promise.resolve(errorAck('rate_limited', 'too many join requests'));
+    }
+    return this.serial(userId, async () => {
+      const actor = await this.registry.get(code);
+      if (!actor) return notFound();
+      if (!this.db) return errorAck('internal', 'usernames unavailable');
+      const username = await findUsername(this.db, userId); // I/O stays outside the room queue
+      if (username === null) return errorAck('forbidden', 'username required');
+      const requestId = this.newId();
+      const now = () => this.timers.now();
+
+      const out = await actor.enqueue((room) => {
+        const at = now();
+        const pruned = pruneExpired(room, at);
+        const r = requestJoin(pruned.room, { userId, username, requestId }, at);
+        return { room: r.room, result: { outcome: r.outcome, expired: pruned.expired } };
+      });
+      this.afterChange(code, actor.state(), out.expired);
+
+      const o = out.outcome;
+      switch (o.kind) {
+        case 'refused':
+          return errorAck(o.code, o.message);
+        case 'admitted':
+          socket.emit('room:join_decision', { approved: true });
+          return OK;
+        case 'cooldown':
+          socket.emit('room:join_decision', { approved: false, retryAfter: o.until });
+          return errorAck('cooldown', 'you were denied recently; try again later');
+        case 'created':
+        case 'pending': {
+          const { request } = o;
+          this.waitOn(socket, code);
+          socket.emit('room:join_pending', {
+            requestId: request.requestId,
+            expiresAt: request.expiresAt,
+          });
+          if (o.kind === 'pending') {
+            return errorAck('already_requested', 'a request is already pending');
+          }
+          this.toHost(code, actor.state().hostId).emit('host:join_request', {
+            requestId: request.requestId,
+            userId,
+            username: request.username,
+          });
+          return OK;
+        }
+      }
+    });
+  }
+
+  private cancelRequest(socket: FeltSocket): Promise<Ack> {
+    const { userId } = socket.data.user;
+    return this.serial(userId, async () => {
+      let cancelled = false;
+      for (const code of [...(this.waiting.get(userId) ?? [])]) {
+        const actor = await this.registry.get(code);
+        if (!actor) {
+          this.stopWaiting(code, userId);
+          continue;
+        }
+        const out = await actor.enqueue((room) => {
+          const pruned = pruneExpired(room, this.timers.now());
+          const r = cancelJoin(pruned.room, userId);
+          return { room: r.room, result: { removed: r.removed, expired: pruned.expired } };
+        });
+        this.stopWaiting(code, userId);
+        this.afterChange(code, actor.state(), out.expired);
+        if (out.removed) {
+          cancelled = true;
+          this.sendInbox(code, actor.state());
+        }
+      }
+      return cancelled ? OK : errorAck('not_found', 'no pending request');
+    });
+  }
+
+  private async admit(socket: FeltSocket, requestId: string, approve: boolean): Promise<Ack> {
+    const { userId } = socket.data.user;
+    const code = socket.data.roomCode;
+    if (!code) return errorAck('not_admitted', 'enter the room first');
+    const actor = await this.registry.get(code);
+    if (!actor) return notFound();
+    const out = await actor.enqueue((room) => {
+      const at = this.timers.now();
+      const pruned = pruneExpired(room, at);
+      const r = decideJoin(pruned.room, userId, requestId, approve, at);
+      return { room: r.room, result: { outcome: r.outcome, expired: pruned.expired } };
+    });
+    this.afterChange(code, actor.state(), out.expired);
+    const o = out.outcome;
+    if (o.kind === 'refused') return errorAck(o.code, o.message);
+    this.decide(
+      code,
+      o.request.userId,
+      o.retryAfter === undefined
+        ? { approved: true }
+        : { approved: false, retryAfter: o.retryAfter },
+    );
+    this.sendInbox(code, actor.state());
+    return OK;
+  }
+
+  private async enter(socket: FeltSocket, code: RoomCode): Promise<Ack> {
+    const { userId } = socket.data.user;
+    const seq = (socket.data.enterSeq ?? 0) + 1;
+    socket.data.enterSeq = seq;
+    const actor = await this.registry.get(code);
+    if (!actor) return notFound();
+    // Queued (even though it usually changes nothing) so the admission check and the channel join
+    // cannot interleave with another change to the room.
+    const out = await actor.enqueue((room) => {
+      const pruned = pruneExpired(room, this.timers.now());
+      return {
+        room: pruned.room,
+        result: {
+          expired: pruned.expired,
+          admitted: pruned.room.admitted.includes(userId),
+          ended: pruned.room.status === 'ended',
+        },
+      };
+    });
+    const room = actor.state();
+    this.afterChange(code, room, out.expired);
+    if (!out.admitted) return errorAck('not_admitted', 'the host has not admitted you');
+    if (out.ended) return errorAck('room_ended', 'room has ended');
+    if (socket.data.enterSeq !== seq) return errorAck('forbidden', 'superseded by a newer request');
+    if (!socket.connected) return OK;
+
+    const previous = socket.data.roomCode;
+    if (previous && previous !== code) {
+      void socket.leave(roomChannel(previous));
+      void socket.leave(memberChannel(previous, userId));
+    }
+    void socket.leave(joinWaitChannel(code, userId));
+    void socket.join([roomChannel(code), memberChannel(code, userId)]);
+    socket.data.roomCode = code;
+    if (room.hostId === userId) socket.emit('host:inbox', hostInbox(room, this.timers.now()));
+    return OK;
+  }
+
+  /** A socket waits for one room at a time: decisions carry no room code. */
+  private waitOn(socket: FeltSocket, code: RoomCode): void {
+    const { userId } = socket.data.user;
+    for (const name of socket.rooms) if (name.startsWith('join:')) void socket.leave(name);
+    void socket.join(joinWaitChannel(code, userId));
+    const codes = this.waiting.get(userId) ?? new Set<RoomCode>();
+    codes.add(code);
+    this.waiting.set(userId, codes);
+  }
+
+  private stopWaiting(code: RoomCode, userId: string): void {
+    this.io.in(joinWaitChannel(code, userId)).socketsLeave(joinWaitChannel(code, userId));
+    const codes = this.waiting.get(userId);
+    codes?.delete(code);
+    if (codes?.size === 0) this.waiting.delete(userId);
+  }
+
+  private decide(
+    code: RoomCode,
+    userId: string,
+    decision: ServerEventPayload<'room:join_decision'>,
+  ): void {
+    this.io.to(joinWaitChannel(code, userId)).emit('room:join_decision', decision);
+    this.stopWaiting(code, userId);
+  }
+
+  private toHost(code: RoomCode, hostId: string) {
+    return this.io.to(memberChannel(code, hostId));
+  }
+
+  private sendInbox(code: RoomCode, room: Readonly<RoomRecord>): void {
+    this.toHost(code, room.hostId).emit('host:inbox', hostInbox(room, this.timers.now()));
+  }
+
+  /** After any task: tell whoever expired, then (re)arm the room's expiry timer. */
+  private afterChange(code: RoomCode, room: Readonly<RoomRecord>, expired: JoinRecord[]): void {
+    // No `retryAfter`: that is how an expiry differs from a denial.
+    for (const r of expired) this.decide(code, r.userId, { approved: false });
+    if (expired.length > 0) this.sendInbox(code, room);
+    this.arm(code, nextExpiry(room));
+  }
+
+  /** One timer per room, for the earliest stored (absolute) deadline. */
+  private arm(code: RoomCode, deadline: number | null, minDelay = 0): void {
+    const old = this.expiryTimers.get(code);
+    if (old !== undefined) this.timers.clearTimeout(old);
+    this.expiryTimers.delete(code);
+    if (deadline === null || this.closed) return;
+    const delay = Math.max(deadline - this.timers.now(), minDelay);
+    this.expiryTimers.set(
+      code,
+      this.timers.setTimeout(() => {
+        this.expiryTimers.delete(code);
+        void this.expire(code);
+      }, delay),
+    );
+  }
+
+  /** Timer expiry is just another queued action. */
+  private async expire(code: RoomCode): Promise<void> {
+    try {
+      const actor = await this.registry.get(code);
+      if (!actor) return;
+      const expired = await actor.enqueue((room) => {
+        const pruned = pruneExpired(room, this.timers.now());
+        return { room: pruned.room, result: pruned.expired };
+      });
+      this.afterChange(code, actor.state(), expired);
+    } catch (err) {
+      if (err instanceof RoomGoneError) return;
+      this.arm(code, this.timers.now() + EXPIRY_RETRY_MS); // e.g. Redis down: try again
+    }
+  }
+}

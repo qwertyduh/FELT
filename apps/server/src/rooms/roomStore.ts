@@ -31,6 +31,7 @@ export const RoomRecordSchema = z
     requests: z.array(
       z
         .object({
+          requestId: z.string().min(1).max(64),
           userId: UserId,
           username: z.string(),
           kind: z.enum(['join', 'topup']),
@@ -39,6 +40,8 @@ export const RoomRecordSchema = z
         })
         .strict(),
     ),
+    /** Join-denial cooldowns: userId -> epoch ms until which the user may not ask again. */
+    denied: z.record(UserId, z.number().int()).optional(),
     seats: z.array(
       z
         .object({

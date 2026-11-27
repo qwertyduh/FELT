@@ -21,6 +21,8 @@ import type { RoomRedis } from './rooms/redis';
 import type { RandomInt } from './rooms/code';
 import { RoomStore } from './rooms/roomStore';
 import { RoomRegistry } from './rooms/roomRegistry';
+import { JoinService } from './rooms/joinService';
+import { roomChannel } from './realtime/channels';
 
 function hasPinoPretty(): boolean {
   try {
@@ -46,6 +48,8 @@ export interface AppDeps {
   db?: Db | null;
   /** Clock/timer for socket token-expiry disconnects; tests inject fakes. */
   realtimeTimers?: Timers;
+  /** Clock/timer for room deadlines (join-request expiry, cooldowns); tests inject fakes. */
+  roomTimers?: Timers;
 }
 
 /**
@@ -181,8 +185,8 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
   const roomRegistry =
     typeof r.get === 'function' && typeof r.set === 'function'
       ? new RoomRegistry(new RoomStore(r as RoomRedis), {
-          // Rooms with connected sockets are never evicted (refined when room membership lands).
-          isRoomActive: () => app.realtime.connectedCount() > 0,
+          // Rooms with admitted sockets in them are never evicted.
+          isRoomActive: (code) => app.realtime.io.sockets.adapter.rooms.has(roomChannel(code)),
         })
       : null;
   app.decorate('roomRegistry', roomRegistry);
@@ -192,6 +196,16 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
   registerAuth(app, verify); // after CORS (preflight is answered first); default-deny from here on
   registerHealth(app, deps.redis);
   const db = deps.db !== undefined ? deps.db : createDbFromEnv(env);
+  if (roomRegistry) {
+    const joins = new JoinService({
+      io: app.realtime.io,
+      registry: roomRegistry,
+      db,
+      ...(deps.roomTimers ? { timers: deps.roomTimers } : {}),
+    });
+    app.realtime.register(joins.register);
+    app.addHook('onClose', async () => joins.close());
+  }
   registerMe(app, db);
   await registerUsernameRoutes(app, db);
   registerRoomRoutes(app, {
