@@ -18,7 +18,8 @@ export function useStillCards<T extends HTMLElement>(active: boolean, settleMs: 
     const now = performance.now(); // monotonic: a clock set back cannot stretch a hold
     const present = new Set<string>();
     const waiting: string[] = [];
-    const cover = document.querySelector('[data-cover]');
+    // The topmost overlay: one portalled over the page comes after any sheet inside it.
+    const cover = [...document.querySelectorAll('[data-cover]')].at(-1) ?? null;
     for (const el of list.current?.querySelectorAll<HTMLElement>('[data-card]') ?? []) {
       const id = el.dataset.card!;
       const { top, left } = el.getBoundingClientRect();

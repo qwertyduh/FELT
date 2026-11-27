@@ -31,7 +31,7 @@ import {
 } from '@felt/protocol';
 import { UNDO_DEPTH, type Game, type GameHand, type UndoEntry } from './gameSchema';
 import type { RoomRecord } from './roomStore';
-import { leaveSeat, type SeatResult } from './seating';
+import { leaveSeat, vacate, type SeatResult } from './seating';
 import { applyTopUps, dropTopUps } from './topUps';
 
 export const NEXT_HAND_DELAY_MS = 5_000;
@@ -57,7 +57,7 @@ const engineRefusal = (room: Readonly<RoomRecord>, e: EngineError): GameResult =
   refuse(room, e.code, e.message.slice(0, 300));
 
 /** The hand still being played (not one that ended and is waiting for the next). */
-function running(room: Readonly<RoomRecord>): GameHand | null {
+export function running(room: Readonly<RoomRecord>): GameHand | null {
   const hand = room.game?.hand;
   return hand && hand.state.street !== 'ended' ? hand : null;
 }
@@ -104,8 +104,9 @@ function finishHand(room: Readonly<RoomRecord>, now: number): RoomRecord {
       nextHandAt: now + NEXT_HAND_DELAY_MS,
     },
   };
+  // `vacate`: a player removed by the host is no longer admitted, but is still cashed out.
   for (const seat of next.seats.filter((s) => s.leaving)) {
-    next = leaveSeat(next, seat.userId, now).room;
+    next = vacate(next, seat.userId, now);
   }
   return next;
 }
@@ -205,12 +206,18 @@ function advanceTo(
   return state.street === 'ended' ? finishHand(next, now) : next;
 }
 
+/** Blinds the host set for the next hand, which is being dealt. */
+function applyBlinds(room: Readonly<RoomRecord>): RoomRecord {
+  const { nextBlinds, ...rest } = room;
+  return nextBlinds ? { ...rest, settings: { ...room.settings, ...nextBlinds } } : room;
+}
+
 /**
  * Deal a hand to everyone seated with chips and not sitting out. Approved top-ups are added first,
  * as part of the same change: if no hand can be dealt, they stay queued.
  */
 function deal(before: Readonly<RoomRecord>, ctx: GameContext): Result<RoomRecord> {
-  const room = applyTopUps(before, ctx.now);
+  const room = applyBlinds(applyTopUps(before, ctx.now));
   const { maxSeats, smallBlind, bigBlind } = room.settings;
   const last = room.game?.button ?? null;
   const seats = Array.from({ length: maxSeats }, (_, i) => {

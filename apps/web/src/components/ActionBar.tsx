@@ -5,7 +5,8 @@
  * winners and the proposed award open as sheets laid over what is above (`data-cover`), so the
  * request cards never move; they take no taps while covered.
  *
- * In hybrid the host's bar has one more line, always there, with Undo and Fix stack (P42).
+ * In hybrid the host's bar has one more line, always there, with Undo and Fix stack (P42). While
+ * the game is paused (P44) nothing can be done here; the host's button row holds Resume.
  *
  * Money safety: a button takes no taps until it has been in place for `ACTION_ARM_MS` (new on
  * every change to the hand, and after a sheet opens or closes), a tap must begin on it, and every
@@ -238,7 +239,9 @@ export function ActionBar({
   }, [notice]);
 
   // A sheet's buttons are armed by the same check, also when nothing else is up.
-  const active = turn !== null || step !== null || Boolean(proposed) || opened !== null;
+  const resumable = hosting && room.status === 'paused';
+  const active =
+    turn !== null || step !== null || Boolean(proposed) || opened !== null || resumable;
   const { list, held, isStill } = useStillCards<HTMLElement>(active, ACTION_ARM_MS);
   const guard = usePressGuard();
 
@@ -258,13 +261,21 @@ export function ActionBar({
     setNotice({ text: actFailure(res.error, event) });
   }
 
+  /** Apart from `send`: resuming twice is harmless, and a pause changes no `turnSeq`. */
+  async function resume() {
+    if (!ready) return;
+    setNotice(null);
+    const res = await client.emitWithAck('host:resume', undefined);
+    if (!res.ok) setNotice({ text: actFailure(res.error, 'host:resume') });
+  }
+
   const act = (move: Move) => {
     if (!turn) return;
     const payload = actPayload(turn.hand.handId, turn.hand.turnSeq, move);
     void send('game:act', () => client.emitWithAck('game:act', payload));
   };
 
-  const off = !ready || sent === turnKey;
+  const off = !ready || (sent === turnKey && !resumable);
   const tap: Tap = (id, run) => ({
     'data-card': id,
     disabled: off || held.has(id),
@@ -368,6 +379,18 @@ export function ActionBar({
           </button>
         )}
       </div>
+      {resumable && (
+        <div className="grid">
+          {button(
+            'Resume game',
+            SOLID,
+            () => void resume(),
+            undefined,
+            // Not tied to the hand: it may be paused with none, and more than once.
+            'resume',
+          )}
+        </div>
+      )}
       {turn && !sizing && (
         <div className="grid grid-cols-3 gap-2">
           {button('Fold', OUTLINE, () => act({ type: 'fold' }))}

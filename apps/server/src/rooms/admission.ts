@@ -6,7 +6,9 @@
 import {
   DENY_COOLDOWN_MS,
   JOIN_REQUEST_TTL_MS,
+  MAX_LISTED_MEMBERS,
   type ErrorCode,
+  type HostMember,
   type ServerEventPayload,
 } from '@felt/protocol';
 import type { RoomRecord } from './roomStore';
@@ -86,7 +88,15 @@ export function requestJoin(
     expiresAt: now + JOIN_REQUEST_TTL_MS,
   };
   return {
-    room: { ...room, requests: [...room.requests, request], denied: liveDenials(room, now) },
+    room: {
+      ...room,
+      requests: [...room.requests, request],
+      denied: liveDenials(room, now),
+      // Asking again settles an earlier removal.
+      ...(room.kicked?.includes(who.userId)
+        ? { kicked: room.kicked.filter((id) => id !== who.userId) }
+        : {}),
+    },
     outcome: { kind: 'created', request },
   };
 }
@@ -133,8 +143,11 @@ export function decideJoin(
     const admitted = room.admitted.includes(request.userId)
       ? room.admitted
       : [...room.admitted, request.userId];
+    const names = request.username
+      ? { ...room.names, [request.userId]: request.username }
+      : room.names;
     return {
-      room: { ...room, requests, denied, admitted },
+      room: { ...room, requests, denied, admitted, ...(names ? { names } : {}) },
       outcome: { kind: 'decided', request },
     };
   }
@@ -174,4 +187,20 @@ export function hostInbox(
       .slice(0, 50)
       .map(({ requestId, userId, amount }) => ({ requestId, userId, amount })),
   };
+}
+
+/** Everyone admitted besides the host, in the order they were admitted. Host-only. */
+export function hostMembers(room: Readonly<RoomRecord>): HostMember[] {
+  return room.admitted
+    .filter((userId) => userId !== room.hostId)
+    .slice(0, MAX_LISTED_MEMBERS)
+    .map((userId) => {
+      const seat = room.seats.find((s) => s.userId === userId);
+      return {
+        userId,
+        username: seat?.username ?? room.names?.[userId] ?? null,
+        seated: seat !== undefined,
+        leaving: seat?.leaving === true,
+      };
+    });
 }

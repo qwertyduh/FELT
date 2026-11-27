@@ -70,7 +70,8 @@ export class TopUpService {
       this.to(code, userId).emit('player:topup_status', { pending: ownTopUp(room, userId) });
     }
     // An approved amount that left the queue without reaching the ledger was over the maximum
-    // (a player who left is not told: it went with their seat).
+    // (a player who left is not told: it went with their seat; ending the game clears the queue).
+    if (room.status === 'ended') return;
     for (const { requestId, userId, amount } of before.pendingTopUps ?? []) {
       if (room.pendingTopUps?.some((r) => r.requestId === requestId)) continue;
       const seat = room.seats.find((s) => s.userId === userId);

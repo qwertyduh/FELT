@@ -300,9 +300,15 @@ export function WaitingRoom({
     return <Hint>Tap an open seat to sit down.</Hint>;
   }
 
+  const { nextBlinds } = room;
   const blinds = (
     <span data-testid="blinds">
       Blinds {chips(room.settings.smallBlind)} / {chips(room.settings.bigBlind)}
+      {nextBlinds && (
+        <span data-testid="next-blinds" className="block text-xs text-cream">
+          Next hand {chips(nextBlinds.smallBlind)} / {chips(nextBlinds.bigBlind)}
+        </span>
+      )}
     </span>
   );
   const seats = { room, userId, selected, onPick: canSit ? pick : null };

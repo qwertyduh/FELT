@@ -289,14 +289,52 @@ export const HostInboxSchema = z
   })
   .strict();
 
+/** The most members `host:members` lists (removing some brings the rest into view). */
+export const MAX_LISTED_MEMBERS = 200;
+
+/**
+ * Host-only: everyone admitted besides the host, seated or not, so that any of them can be
+ * removed. `username` is null only for a member of a room stored before names were kept who has
+ * not been back since. `leaving`: gave up a seat whose cards are still live.
+ */
+export const HostMembersSchema = z
+  .object({
+    members: z
+      .array(
+        z
+          .object({
+            userId: UserIdSchema,
+            username: z.string().min(1).max(20).nullable(),
+            seated: z.boolean(),
+            leaving: z.boolean(),
+          })
+          .strict(),
+      )
+      .max(MAX_LISTED_MEMBERS),
+  })
+  .strict();
+export type HostMember = z.infer<typeof HostMembersSchema>['members'][number];
+
 export const serverEventSchemas = {
   'room:join_pending': z.object({ requestId, expiresAt: EpochMsSchema }).strict(),
+  /** `ended`: the host ended the game while the request was waiting. */
   'room:join_decision': z
-    .object({ approved: z.boolean(), retryAfter: EpochMsSchema.optional() })
+    .object({
+      approved: z.boolean(),
+      retryAfter: EpochMsSchema.optional(),
+      ended: z.literal(true).optional(),
+    })
     .strict(),
+  /**
+   * To a removed player's sockets, which are out of the room's channels by then. Their admission
+   * is gone: coming back needs a new join request.
+   */
+  'room:kicked': z.object({ code: RoomCodeSchema }).strict(),
   'host:join_request': JoinRequestSchema,
   'host:topup_request': TopUpRequestSchema,
   'host:inbox': HostInboxSchema,
+  /** To the host on entry and on every change; empty to a host who has handed over. */
+  'host:members': HostMembersSchema,
   /**
    * To the requester. `reason: 'over_max'`: not added, because by the time it was due it would
    * have taken the stack over the maximum buy-in.

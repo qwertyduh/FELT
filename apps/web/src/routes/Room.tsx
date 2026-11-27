@@ -10,6 +10,7 @@ import {
 } from '@felt/protocol';
 import { ActionBar } from '../components/ActionBar';
 import { HostInbox } from '../components/HostInbox';
+import { HostMenu } from '../components/HostMenu';
 import { TopUpToast } from '../components/TopUpToast';
 import { WaitingRoom } from '../components/WaitingRoom';
 import { apiFetch } from '../lib/api';
@@ -256,6 +257,16 @@ function EnteredScreen({
 }) {
   const room = useRoomStore((s) => s.room);
   const mine = room?.seats.find((s) => s?.userId === userId) ?? null;
+  if (room?.status === 'ended') {
+    // The session recap (P52-P54) takes this screen over.
+    return (
+      <div data-testid="entered-room" className="flex flex-1 flex-col">
+        <Screen title="This game has ended" actions={<HomeLink />}>
+          <Note>Thanks for playing. A session recap isn&apos;t available yet.</Note>
+        </Screen>
+      </div>
+    );
+  }
   return (
     <div data-testid="entered-room" className="flex flex-1 flex-col">
       {room ? (
@@ -325,6 +336,27 @@ function Body({
   }
 
   switch (phase.name) {
+    case 'kicked':
+      return (
+        <Screen
+          title="You were removed"
+          actions={
+            <>
+              <button
+                type="button"
+                className={PRIMARY}
+                disabled={!connected}
+                onClick={() => session.request()}
+              >
+                Request to join again
+              </button>
+              <HomeLink />
+            </>
+          }
+        >
+          <Note>The host took you out of this room. You can ask to come back.</Note>
+        </Screen>
+      );
     case 'pending':
       return (
         <PendingScreen
@@ -408,7 +440,16 @@ function MissingRoom() {
   );
 }
 
-function Frame({ code, children }: { code: string; children: ReactNode }) {
+function Frame({
+  code,
+  action,
+  children,
+}: {
+  code: string;
+  /** In the header, where nothing below can move it. */
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <section
       className="flex flex-1 flex-col"
@@ -421,6 +462,7 @@ function Frame({ code, children }: { code: string; children: ReactNode }) {
           </span>
           Home
         </Link>
+        {action}
         <p
           data-testid="room-code"
           className="min-w-0 truncate font-display text-lg tracking-widest text-brass"
@@ -453,10 +495,26 @@ function Visit({ code, userId }: { code: RoomCode; userId: string }) {
   }, [session]);
 
   return (
-    <Frame code={code}>
+    <Frame code={code} action={<Controls session={session} userId={userId} client={client} />}>
       <Connected session={session} userId={userId} client={client} />
     </Frame>
   );
+}
+
+/** The host's menu, only while we are in the room. */
+function Controls({
+  session,
+  userId,
+  client,
+}: {
+  session: JoinSession;
+  userId: string;
+  client: SocketClient;
+}) {
+  const entered = useStore(session.store, (s) => s.phase.name === 'entered');
+  const ready = useStore(session.store, (s) => s.ready);
+  const room = useRoomStore((s) => s.room);
+  return entered ? <HostMenu room={room} userId={userId} ready={ready} client={client} /> : null;
 }
 
 function Connected({

@@ -107,7 +107,12 @@ export function sit(
     stack: want.buyIn,
     sittingOut: false,
   };
-  return done({ ...room, seats: [...room.seats, seat], ledger: [...room.ledger, entry] });
+  return done({
+    ...room,
+    names: { ...room.names, [who.userId]: who.username },
+    seats: [...room.seats, seat],
+    ledger: [...room.ledger, entry],
+  });
 }
 
 export function setSittingOut(
@@ -129,8 +134,20 @@ export function setSittingOut(
 export function leaveSeat(room: Readonly<RoomRecord>, userId: string, now: number): SeatResult {
   const gated = gate(room, userId);
   if (gated) return gated;
+  if (!room.seats.some((s) => s.userId === userId)) {
+    return refuse(room, 'not_seated', 'you are not seated');
+  }
+  return done(vacate(room, userId, now));
+}
+
+/**
+ * `leaveSeat` without the checks on who asks: also for a seat whose player is no longer admitted
+ * (removed while their cards were still live, P44) and for the end of the game. A user with no
+ * seat changes nothing.
+ */
+export function vacate(room: Readonly<RoomRecord>, userId: string, now: number): RoomRecord {
   const mine = room.seats.find((s) => s.userId === userId);
-  if (!mine) return refuse(room, 'not_seated', 'you are not seated');
+  if (!mine) return room as RoomRecord;
   const entry: Ledger = {
     t: now,
     userId,
@@ -139,9 +156,9 @@ export function leaveSeat(room: Readonly<RoomRecord>, userId: string, now: numbe
     ...(room.status === 'lobby' ? { note: NOTE_REFUND } : {}),
   };
   const left = dropTopUps(room, userId);
-  return done({
+  return {
     ...left,
     seats: left.seats.filter((s) => s !== mine),
     ledger: [...left.ledger, entry],
-  });
+  };
 }

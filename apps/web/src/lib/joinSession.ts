@@ -33,6 +33,8 @@ export type JoinPhase =
   /** Admitted, waiting for the `room:enter` ack. */
   | { name: 'entering' }
   | { name: 'entered' }
+  /** The host removed us; coming back takes a new request. */
+  | { name: 'kicked' }
   | { name: 'ended' }
   | { name: 'missing' };
 
@@ -179,7 +181,7 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
       return show({ name: 'preview' });
     }
     if (phase.name === 'requesting') return void ask();
-    if (phase.name === 'expired' || phase.name === 'ended' || phase.name === 'missing') return;
+    if (['kicked', 'expired', 'ended', 'missing'].includes(phase.name)) return;
     // What this tab holds counts only if storage could not keep it: never revive a request that
     // another tab removed.
     const held: JoinMemory | null =
@@ -262,7 +264,9 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
   const onDecision = (d: ServerEventPayload<'room:join_decision'>) => {
     const { phase } = get();
     if (phase.name === 'entered' || phase.name === 'entering') return;
-    if (d.approved) {
+    if (d.ended) {
+      show({ name: 'ended' });
+    } else if (d.approved) {
       show({ name: 'entering' });
       void enter();
     } else if (d.retryAfter !== undefined) {
@@ -275,6 +279,16 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
     } else if (phase.name === 'pending' || phase.name === 'requesting') {
       show({ name: 'expired' });
     }
+  };
+
+  /** Out of the room: answers still on the way no longer count, and its state goes. */
+  const onKicked = (p: ServerEventPayload<'room:kicked'>) => {
+    if (p.code !== code) return;
+    epoch += 1;
+    asking = false;
+    clearTimeout(retryTimer);
+    resetRoom();
+    show({ name: 'kicked' });
   };
 
   /**
@@ -328,6 +342,7 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
       client.socket.on('disconnect', onDisconnect);
       client.socket.on('room:join_pending', onPending);
       client.socket.on('room:join_decision', onDecision);
+      client.socket.on('room:kicked', onKicked);
       window.addEventListener('storage', onStorage);
       void loadPreview();
       client.connect();
@@ -342,6 +357,7 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
       client.socket.off('disconnect', onDisconnect);
       client.socket.off('room:join_pending', onPending);
       client.socket.off('room:join_decision', onDecision);
+      client.socket.off('room:kicked', onKicked);
       window.removeEventListener('storage', onStorage);
       client.disconnect();
       resetRoom();
@@ -351,6 +367,7 @@ export function createJoinSession(deps: JoinSessionDeps): JoinSession {
       const allowed =
         phase.name === 'preview' ||
         phase.name === 'expired' ||
+        phase.name === 'kicked' ||
         (phase.name === 'denied' && phase.until <= Date.now());
       if (allowed) void ask();
     },

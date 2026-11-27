@@ -21,6 +21,7 @@ import {
   cancelJoin,
   decideJoin,
   hostInbox,
+  hostMembers,
   nextExpiry,
   ownTopUp,
   pruneExpired,
@@ -274,7 +275,13 @@ export class JoinService {
     const { userId } = socket.data.user;
     const seq = (socket.data.enterSeq ?? 0) + 1;
     socket.data.enterSeq = seq;
-    const actor = await this.registry.get(code);
+    let actor = await this.registry.get(code);
+    // A room stored before names were kept: learn this member's for the host's list.
+    let name: string | null = null;
+    if (actor && this.unnamed(actor.state(), userId)) {
+      name = await this.lookUp(userId);
+      actor = await this.registry.get(code); // fetched again: it may have been evicted meanwhile
+    }
     if (!actor) {
       missed();
       return notFound();
@@ -283,12 +290,17 @@ export class JoinService {
     // cannot interleave with another change to the room.
     const out = await actor.enqueue((room) => {
       const pruned = pruneExpired(room, this.timers.now());
+      const next =
+        name !== null && this.unnamed(pruned.room, userId)
+          ? { ...pruned.room, names: { ...pruned.room.names, [userId]: name } }
+          : pruned.room;
       return {
-        room: pruned.room,
+        room: next,
         result: {
           expired: pruned.expired,
-          admitted: pruned.room.admitted.includes(userId),
-          ended: pruned.room.status === 'ended',
+          admitted: next.admitted.includes(userId),
+          ended: next.status === 'ended',
+          kicked: next.kicked?.includes(userId) ?? false,
         },
       };
     });
@@ -296,6 +308,8 @@ export class JoinService {
     this.afterChange(code, room, out.expired);
     if (!out.admitted) {
       missed();
+      // Removed while away: say so rather than leave them at a plain join screen.
+      if (out.kicked) socket.emit('room:kicked', { code });
       return errorAck('not_admitted', 'the host has not admitted you');
     }
     if (out.ended) return errorAck('room_ended', 'room has ended');
@@ -311,7 +325,10 @@ export class JoinService {
     void socket.leave(joinWaitChannel(code, userId));
     void socket.join([roomChannel(code), memberChannel(code, userId)]);
     socket.data.roomCode = code;
-    if (room.hostId === userId) socket.emit('host:inbox', hostInbox(room, this.timers.now()));
+    if (room.hostId === userId) {
+      socket.emit('host:inbox', hostInbox(room, this.timers.now()));
+      socket.emit('host:members', { members: hostMembers(room) });
+    }
     socket.emit('player:topup_status', { pending: ownTopUp(room, userId) });
     // If this changes who is connected, publish a new version (which reaches this socket too).
     // Otherwise resend the current one unchanged.
@@ -320,6 +337,23 @@ export class JoinService {
       this.broadcaster.sendTo(socket, actor.state());
     }
     return OK;
+  }
+
+  private unnamed(room: Readonly<RoomRecord>, userId: string): boolean {
+    return (
+      room.admitted.includes(userId) &&
+      !room.names?.[userId] &&
+      !room.seats.some((s) => s.userId === userId)
+    );
+  }
+
+  /** Never keeps anyone out: without a name the host sees them unnamed. */
+  private async lookUp(userId: string): Promise<string | null> {
+    try {
+      return this.db ? await findUsername(this.db, userId) : null;
+    } catch {
+      return null;
+    }
   }
 
   /**

@@ -172,6 +172,11 @@ export const PublicRoomStateSchema = z
     hand: PublicHandSchema.nullable(),
     /** Approved top-ups waiting for the next hand (amount per userId). */
     pendingTopUps: ChipsByUserSchema,
+    /** Blinds the host has set for the next hand; absent when no change is waiting. */
+    nextBlinds: z
+      .object({ smallBlind: TableChipsSchema, bigBlind: TableChipsSchema })
+      .strict()
+      .optional(),
     /** Absolute epoch ms of the next blind increase; null when off. */
     nextBlindIncreaseAt: EpochMsSchema.nullable(),
     paused: z.boolean(),

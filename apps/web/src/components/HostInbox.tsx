@@ -22,8 +22,8 @@ import { useStillCards } from '../lib/useStillCards';
 export const SETTLE_MS = 400;
 export const NOTICE_MS = 4_000;
 
-const BUTTON = 'min-h-12 flex-1 rounded-xl px-3 text-base font-semibold active:brightness-90';
-const CARD = 'rounded-2xl border border-brass-dim bg-felt-950 p-3';
+const BUTTON = 'flex-1 rounded-xl px-3 text-base font-semibold active:brightness-90';
+const CARD = 'rounded-2xl border border-brass-dim bg-felt-950';
 
 function failure(code: ErrorCode | 'timeout'): string {
   if (code === 'rate_limited') return 'Too many taps. Wait a moment and try again.';
@@ -170,9 +170,10 @@ export function HostInbox({
               key={requestId}
               data-card={requestId}
               data-testid={kind === 'join' ? 'join-request' : 'topup-request'}
-              className={`shrink-0 ${CARD}`}
+              // Compact: the longest name and amount, on three lines, still fit the region whole.
+              className={`shrink-0 ${CARD} ${compact ? 'px-3 py-2' : 'p-3'}`}
             >
-              <p className="text-base wrap-anywhere text-cream">
+              <p className={`text-base wrap-anywhere text-cream ${compact ? 'leading-5' : ''}`}>
                 <strong className="font-semibold">{card.own ? 'You' : name}</strong>{' '}
                 {card.kind === 'join' ? (
                   'wants to join'
@@ -186,11 +187,11 @@ export function HostInbox({
                   </>
                 )}
               </p>
-              <div className="mt-2 flex gap-2">
+              <div className={`flex gap-2 ${compact ? 'mt-1.5' : 'mt-2'}`}>
                 <button
                   type="button"
                   aria-label={no}
-                  className={`${BUTTON} border border-brass text-brass disabled:border-felt-700 disabled:text-cream/30`}
+                  className={`${BUTTON} ${compact ? 'min-h-11' : 'min-h-12'} border border-brass text-brass disabled:border-felt-700 disabled:text-cream/30`}
                   disabled={off}
                   onPointerDown={press(requestId, false)}
                   onClick={click(card, false)}
@@ -200,7 +201,7 @@ export function HostInbox({
                 <button
                   type="button"
                   aria-label={yes}
-                  className={`${BUTTON} bg-brass text-felt-950 disabled:bg-felt-800 disabled:text-cream/40`}
+                  className={`${BUTTON} ${compact ? 'min-h-11' : 'min-h-12'} bg-brass text-felt-950 disabled:bg-felt-800 disabled:text-cream/40`}
                   disabled={off}
                   onPointerDown={press(requestId, true)}
                   onClick={click(card, true)}

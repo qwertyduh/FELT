@@ -8,6 +8,7 @@ import {
 type PrivateHand = Parameters<ServerToClientEvents['hand:private']>[0];
 type HostInbox = Parameters<ServerToClientEvents['host:inbox']>[0];
 type JoinRequest = Parameters<ServerToClientEvents['host:join_request']>[0];
+type HostMembers = Parameters<ServerToClientEvents['host:members']>[0];
 type TopUpRequest = Parameters<ServerToClientEvents['host:topup_request']>[0];
 type TopUpStatus = Parameters<ServerToClientEvents['player:topup_status']>[0];
 type TopUpDecision = Parameters<ServerToClientEvents['player:topup_decision']>[0];
@@ -27,6 +28,8 @@ export interface RoomStoreState {
   topUp: TopUpStatus['pending'];
   /** The host's latest answer to it, until the toast has been shown. */
   topUpDecision: TopUpDecision | null;
+  /** Host only: everyone else admitted. */
+  members: HostMembers['members'];
   hostInbox: {
     joinRequests: (JoinRequest & { expiresAt?: number })[];
     topUpRequests: TopUpRequest[];
@@ -45,6 +48,7 @@ export const initialRoomState: RoomStoreState = {
   privateHand: null,
   topUp: null,
   topUpDecision: null,
+  members: [],
   hostInbox: emptyInbox,
 };
 
@@ -95,6 +99,10 @@ export function clearPrivateHand(): void {
 
 export function applyHostInbox(inbox: HostInbox): void {
   useRoomStore.setState({ hostInbox: { ...inbox } });
+}
+
+export function applyHostMembers({ members }: HostMembers): void {
+  useRoomStore.setState({ members });
 }
 
 export function addJoinRequest(req: JoinRequest): void {

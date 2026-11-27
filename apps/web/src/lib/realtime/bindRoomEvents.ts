@@ -3,6 +3,7 @@ import {
   addJoinRequest,
   addTopUpRequest,
   applyHostInbox,
+  applyHostMembers,
   applyPrivateHand,
   applyRoomState,
   applyTopUpDecision,
@@ -25,6 +26,7 @@ export function bindRoomEvents(socket: Listenable): () => void {
   socket.on('room:state', onState);
   socket.on('hand:private', onHand as never);
   socket.on('host:inbox', applyHostInbox);
+  socket.on('host:members', applyHostMembers);
   socket.on('host:join_request', addJoinRequest);
   socket.on('host:topup_request', addTopUpRequest);
   socket.on('player:topup_status', applyTopUpStatus);
@@ -34,6 +36,7 @@ export function bindRoomEvents(socket: Listenable): () => void {
     socket.off('room:state', onState);
     socket.off('hand:private', onHand as never);
     socket.off('host:inbox', applyHostInbox);
+    socket.off('host:members', applyHostMembers);
     socket.off('host:join_request', addJoinRequest);
     socket.off('host:topup_request', addTopUpRequest);
     socket.off('player:topup_status', applyTopUpStatus);

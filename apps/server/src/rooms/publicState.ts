@@ -149,6 +149,14 @@ export function toPublicState(
     button: hand?.state.button ?? room.game?.button ?? null,
     hand: hand ? toPublicHand(hand) : null,
     pendingTopUps: Object.fromEntries((room.pendingTopUps ?? []).map((t) => [t.userId, t.amount])),
+    ...(room.nextBlinds
+      ? {
+          nextBlinds: {
+            smallBlind: room.nextBlinds.smallBlind,
+            bigBlind: room.nextBlinds.bigBlind,
+          },
+        }
+      : {}),
     nextBlindIncreaseAt: null, // not scheduled yet
     paused: room.status === 'paused',
     log: (room.log ?? []).map(toPublicLogEntry),

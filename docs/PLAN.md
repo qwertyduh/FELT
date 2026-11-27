@@ -339,10 +339,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** tests show a top-up approved mid-hand is applied only at the next hand, a decline, and a max-buy-in breach rejected; Playwright covers the end-to-end flow.
 - _Note: GO. Owner to confirm (PRD silent): a busted leaver re-sits with 0 and buys back with host approval; a top-up that would exceed max buy-in when due is dropped whole; the host approves their own top-up; no minimum; one outstanding top-up per player with no cancel; leaving drops it; an offline player misses the decision notice. P44 kick must go through leave and end game must clear the queue. P52 counts top_up lines. Folded into P44: clipped Approve buttons on the worst-case 320px card, toast covers Home, Buy more sheet stays over the action bar when your turn arrives._
 
-### ⬜ P44 · Host room controls
+### ✅ P44 · Host room controls
 - **Needs:** P33
 - **Do:** Pause/resume, kick (removes admission), change blinds (next hand), transfer host and end game (recap placeholder), with server + UI.
 - **Done when:** tests for each control, plus a non-host attempt rejected.
+- _Note: GO on round 2 (round 1: the host could not remove an admitted player with no seat). Owner to confirm (PRD silent): ending the game during a live hand cancels it and refunds everyone, so a host losing a hand can take the bet back; kicked players may ask again with no cooldown; blinds are manual only. Gaps: no player Leave / Sit out button (no phase owns it); ended or transferred rooms still count toward the 5-room cap; host:mute unimplemented. P52: end keeps seats with final stacks and does not send session:recap._
 
 ### ⬜ P45 · Reconnection & host failover
 - **Needs:** P44

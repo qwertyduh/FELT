@@ -25,6 +25,7 @@ import { JoinService } from './rooms/joinService';
 import { SeatService } from './rooms/seatService';
 import { GameService } from './rooms/gameService';
 import { TopUpService } from './rooms/topUpService';
+import { HostService } from './rooms/hostService';
 import { StateBroadcaster } from './rooms/broadcaster';
 import { roomChannel } from './realtime/channels';
 
@@ -190,7 +191,7 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
   const broadcaster = new StateBroadcaster(app.realtime.io, { log: app.log });
   // Room actors; null when Redis lacks the room commands (same optional pattern as the routes).
   const r = deps.redis as Partial<RoomRedis>;
-  const late: { games?: GameService; topUps?: TopUpService } = {};
+  const late: { games?: GameService; topUps?: TopUpService; hosts?: HostService } = {};
   const roomRegistry: RoomRegistry | null =
     typeof r.get === 'function' && typeof r.set === 'function'
       ? new RoomRegistry(new RoomStore(r as RoomRedis), {
@@ -198,6 +199,8 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
           isRoomActive: (code) => app.realtime.io.sockets.adapter.rooms.has(roomChannel(code)),
           actor: {
             onCommit: (room, before) => {
+              // First: it takes removed players out of the room before anything more is sent.
+              late.hosts?.committed(room, before);
               broadcaster.publish(room);
               late.games?.committed(room, before);
               late.topUps?.committed(room, before);
@@ -252,6 +255,13 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
     });
     late.topUps = topUps;
     app.realtime.register(topUps.register);
+    const hosts = new HostService({
+      io: app.realtime.io,
+      registry: roomRegistry,
+      ...(deps.roomTimers ? { timers: deps.roomTimers } : {}),
+    });
+    late.hosts = hosts;
+    app.realtime.register(hosts.register);
   }
   registerMe(app, db);
   await registerUsernameRoutes(app, db);

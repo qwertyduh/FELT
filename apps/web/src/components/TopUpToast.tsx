@@ -1,5 +1,5 @@
 /**
- * The host's answer to your top-up (P43), over the top of the screen. It takes no taps and moves
+ * The host's answer to your top-up (P43), over the screen just below the header. It takes no taps and moves
  * nothing.
  */
 import { useEffect } from 'react';
@@ -20,7 +20,8 @@ export function TopUpToast() {
   return (
     <div
       role="status"
-      className="pointer-events-none fixed inset-x-0 top-2 z-30 mx-auto w-full max-w-[480px] px-3"
+      // Below the header, so Home and the host's button stay in view.
+      className="pointer-events-none fixed inset-x-0 top-[calc(max(1rem,env(safe-area-inset-top))+3rem)] z-30 mx-auto w-full max-w-[480px] px-3"
     >
       {decision && (
         <p

@@ -163,6 +163,13 @@ export function BuyMore({
     setWasAwarding(awarding);
     if (awarding) setOpen(false);
   }
+  // Nor over the action bar when your turn arrives (it may still be opened during the turn).
+  const myTurn = room.status === 'playing' && room.hand?.currentActor === me.seat;
+  const [wasMyTurn, setWasMyTurn] = useState(myTurn);
+  if (myTurn !== wasMyTurn) {
+    setWasMyTurn(myTurn);
+    if (myTurn) setOpen(false);
+  }
   if (open && blocked) setOpen(false);
 
   const label =

@@ -239,10 +239,10 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | `player:topup_request` | `{ amount }` | Seated player (the host too); one outstanding per player; `stack + amount ≤ maxBuyIn`, checked again at approval and when applied |
 | `host:admit` | `{ requestId, approve }` | Host |
 | `host:topup` | `{ requestId, approve }` | Host |
-| `host:start` / `host:pause` / `host:resume` / `host:end` | — | Host |
-| `host:settings` | Partial room settings (applied next hand) | Host |
-| `host:kick` | `{ userId }` | Host |
-| `host:transfer` | `{ userId }` | Host |
+| `host:start` / `host:pause` / `host:resume` / `host:end` | — | Host. While paused, moves, deals, awards, disputes, undo, stack fixes and start are refused (`room_paused`); resume restarts any waiting deadline in full. End cancels a running hand (everyone gets back what they put in) and drops all requests and queued top-ups |
+| `host:settings` | `{ smallBlind, bigBlind }` (applied next hand) | Host |
+| `host:kick` | `{ userId }`. Does what `room:leave` does, then removes admission | Host |
+| `host:transfer` | `{ userId }` (seated and connected) | Host |
 | `host:mute` | `{ userId, muted }` | Host |
 | `host:advance_street` | `{ handId, turnSeq, street, cards? }` | Host, hybrid |
 | `host:award` | `{ handId, turnSeq, awards: [{ potId, winners }] }` (every pot) | Host, hybrid |
@@ -258,7 +258,9 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | Event | Payload | Audience |
 |---|---|---|
 | `room:join_pending` | `{ requestId, expiresAt }` | Requester |
-| `room:join_decision` | `{ approved, retryAfter? }` | Requester |
+| `room:join_decision` | `{ approved, retryAfter?, ended? }` | Requester |
+| `room:kicked` | `{ code }` | A removed player's sockets (also on `room:enter` until they ask again) |
+| `host:members` | `{ members: [{ userId, username, seated, leaving }] }` (everyone admitted; empty to a host who handed over) | Host |
 | `host:join_request` | `{ requestId, userId, username }` | Host |
 | `host:topup_request` | `{ requestId, userId, amount }` | Host |
 | `player:topup_decision` | `{ requestId, approved, amount, reason? }` (`over_max`: dropped when due) | Requester |

@@ -58,6 +58,8 @@ export interface RoomActorOptions {
 export interface EnqueueOptions {
   /** Persist without refreshing the room's TTL (the change is not user activity). */
   keepTtl?: boolean;
+  /** This task hands the room to another host; any other change of `hostId` is rejected. */
+  newHost?: boolean;
 }
 
 /**
@@ -153,7 +155,7 @@ export class RoomActor {
         if (
           !RoomRecordSchema.safeParse(committed).success ||
           committed.code !== before.code ||
-          committed.hostId !== before.hostId
+          (committed.hostId !== before.hostId && !opts.newHost)
         ) {
           throw new RoomActorError('invalid_record');
         }

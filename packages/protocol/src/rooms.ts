@@ -63,16 +63,14 @@ export const RoomSettingsSchema = z.object(settingsShape).strict().superRefine(c
 export type RoomSettings = z.infer<typeof RoomSettingsSchema>;
 
 /**
- * Host edits (applied next hand). Every field optional, at least one required;
- * the mode cannot change. Cross-field ordering is re-checked against the full
- * merged settings by the server; here only fields present together are checked.
+ * `host:settings`: what a host may change once the room exists. Only the blinds, and only by hand
+ * (PRD 5.2; nothing specifies an automatic schedule). Both are sent, so they are checked together.
+ * They apply from the next hand.
  */
 export const HostSettingsPatchSchema = z
-  .object({ ...settingsShape, mode: z.never().optional() })
-  .partial()
+  .object({ smallBlind: settingsShape.smallBlind, bigBlind: settingsShape.bigBlind })
   .strict()
-  .superRefine(checkRanges)
-  .refine((p) => Object.values(p).some((v) => v !== undefined), { message: 'empty patch' });
+  .superRefine(checkRanges);
 export type HostSettingsPatch = z.infer<typeof HostSettingsPatchSchema>;
 
 /** PRD 5.2 defaults: 1000 min, no max, 5/10, 9 seats, timer 30s online / off hybrid, no increase. */

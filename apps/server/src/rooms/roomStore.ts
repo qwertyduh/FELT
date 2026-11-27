@@ -56,6 +56,15 @@ export const RoomRecordSchema = z
     topUpRequests: z.array(TopUpSchema).optional(),
     /** Approved top-ups, added to the stack when the next hand starts. */
     pendingTopUps: z.array(TopUpSchema).optional(),
+    /** Usernames of admitted users, for the host's list (`host:members`). Absent on old rooms. */
+    names: z.record(UserId, z.string().min(1).max(20)).optional(),
+    /** Removed by the host and not asked again since: told so if they come back. */
+    kicked: z.array(UserId).optional(),
+    /** Blinds the host set while a hand was running; taken up when the next one is dealt. */
+    nextBlinds: z
+      .object({ smallBlind: PositiveChipsSchema, bigBlind: PositiveChipsSchema })
+      .strict()
+      .optional(),
     /** Join-denial cooldowns: userId -> epoch ms until which the user may not ask again. */
     denied: z.record(UserId, z.number().int()).optional(),
     seats: z.array(
@@ -111,6 +120,7 @@ export function newRoomRecord(
     hostUsername: host.username,
     createdAt: now,
     admitted: [host.id],
+    names: { [host.id]: host.username },
     requests: [],
     seats: [],
     ledger: [],
