@@ -49,7 +49,7 @@ npm run sandbox:down    # stops it and discards its rooms
 - Keys come from `supabase status` into `apps/server/.env.sandbox` (gitignored). The root `.env` is not used, and the script refuses a non-local Supabase URL.
 - `SANDBOX_PORT` and `SANDBOX_WEB_ORIGIN` (default `http://localhost:5173,http://localhost:4173`) override the defaults. Redis has no host port, so the dev Redis is unaffected.
 - Web app: run `npm run env:local -w apps/web` once (points at `127.0.0.1:3001`), then `npm run dev -w apps/web`.
-- Playwright: with the sandbox up, `REDIS_CONTAINER=felt-sandbox-redis-1 npm run e2e`. It reuses the server already on 3001, so check that `sandbox:up` succeeded; with nothing on 3001 it starts a dev server instead. Specs assume port 3001.
+- Playwright: with the sandbox up, `npm run e2e:sandbox` (one spec: `npm run e2e:sandbox -- online-game`). It starts no game server and stops with a message if the sandbox is not up; it reuses or starts the web dev server on 5173. Specs assume port 3001. `showdown.spec.ts` is skipped there: it needs a rigged deck, which never goes into the image (see `apps/web/e2e/rig-deck.mjs`; run it with `npm run e2e` against a rigged dev server). Specs are local files, not in the repo.
 - Local Supabase allows 30 anonymous sign-ins per hour per IP (`[auth.rate_limit]` in `supabase/config.toml`); long browser runs can hit it.
 
 ## Env var names

@@ -397,10 +397,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** Playwright covers a showdown with a split.
 - _Note: GO on round 2 (round 1: the host's remove-player sheet revealed the result during an all-in run-out; double-tapping Show on a paused table resumed the game). Banner replaces the blinds line; opponents' stacks are hidden while their cards are shown; Buy more, open seats and top-up Approve are unavailable for the few seconds of a run-out. Open: the result is in the wire data during the run-out; a top-up refusal can leak it in a one-round-trip race; if a hand ends while paused, Show appears under the right part of the Resume button._
 
-### ⬜ P51 · Online E2E game
+### ✅ P51 · Online E2E game
 - **Needs:** P48, P50
 - **Do:** Playwright: 3 browsers, 5 hands, a timeout fold and a side pot.
 - **Done when:** passes in CI.
+- _Note: GO. apps/web/e2e/online-game.spec.ts (local only) passes against the Docker-built sandbox: sandbox:up, then npm run e2e:sandbox. 'Passes in CI' means passes locally. showdown.spec needs a rigged dev server and is skipped in sandbox mode. Plain npm run e2e now defaults to Redis 6379 (set REDIS_PORT=6390 on this Mac) and still starts a server that reads the root .env._
 
 ---
 

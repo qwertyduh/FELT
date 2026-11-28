@@ -17,6 +17,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "e2e": "playwright test -c apps/web/playwright.config.ts",
+    "e2e:sandbox": "node scripts/e2e-sandbox.mjs",
     "sandbox:up": "node scripts/sandbox.mjs up",
     "sandbox:down": "node scripts/sandbox.mjs down",
     "sandbox:logs": "node scripts/sandbox.mjs logs"
