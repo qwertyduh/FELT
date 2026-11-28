@@ -13,6 +13,10 @@ No secrets in this file. Secrets live only in Railway, Vercel and Supabase.
 
 Supabase signs tokens with ES256 (JWT signing keys); JWKS is at `<url>/auth/v1/.well-known/jwks.json`. Anonymous sign-ins are on, Google is off.
 
+## Render (free option)
+
+`render.yaml` at the repo root creates `felt-server` (Docker, free) and `felt-redis` (free Key Value) in Singapore: Render dashboard, **New > Blueprint**, branch `rebuild`. Render asks for `SUPABASE_SERVICE_ROLE_KEY`. Auto-deploy is off, so deploy by hand ("Manual Deploy"). Free tier: sleeps after 15 min without traffic, and a Redis restart loses live games. Apply pending migrations and point Vercel's `VITE_SERVER_URL` at the Render URL.
+
 ## Redeploy
 
 Run from the repo root (the working tree is uploaded; no GitHub link).

@@ -1,0 +1,37 @@
+# Render Blueprint: the free game server and its Redis. The web app stays on Vercel.
+# No secrets here: Render asks for the one marked `sync: false` when the Blueprint is created.
+services:
+  - type: web
+    name: felt-server
+    runtime: docker
+    plan: free
+    region: singapore # closest to the Supabase project (Mumbai); cannot be changed later
+    branch: rebuild
+    dockerfilePath: ./apps/server/Dockerfile
+    dockerContext: .
+    healthCheckPath: /ready
+    # Deploy by hand: a push must not restart the server mid-game, and web and server ship together.
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: WEB_ORIGIN
+        value: https://felt-rosy-sigma.vercel.app,https://felt-qwertyduhs-projects.vercel.app
+      - key: SUPABASE_URL
+        value: https://zhggexxpffjbpunnchuk.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: felt-redis
+          property: connectionString
+
+  - type: keyvalue
+    name: felt-redis
+    plan: free
+    region: singapore
+    ipAllowList: [] # private: only services in this Render account can reach it
+    maxmemoryPolicy: noeviction # never silently drop a live room
