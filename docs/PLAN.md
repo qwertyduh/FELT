@@ -405,6 +405,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 
 ---
 
+## Stage D review (2026-11-28)
+- _Opus review of Stage D: no card leak, chip error or RoomActor break; ready for a game night with caveats. Nothing from it has been fixed yet. New: (1) the host removing a live opponent mid-hand forfeits that player's matched chips to the pot, which heads-up goes to the host; (2) no network grace at the turn deadline, so a last-moment Call can become a fold plus a strike; (3) production accepts an http SUPABASE_URL (with an https JWKS URL and no API URL), sending the service-role key over http. Rated more serious than before: ending the game mid-hand lets an online host cancel a hand they are losing. Suggested order: host kick and end-game, grace period after a restart, "sat out by the timer" notice, server time on the wire._
+
+---
+
 ## Stage E — Recap, chat, hand ranks
 
 ### ⬜ P52 · Recap builder
