@@ -7,8 +7,9 @@ No secrets in this file. Secrets live only in Railway, Vercel and Supabase.
 | Piece | Where | Name / id | URL |
 |---|---|---|---|
 | Web | Vercel | project `felt` (`prj_hRxwLk1P1AmA3jIh9gVpGwphvcX7`) | https://felt-rosy-sigma.vercel.app (alias: https://felt-qwertyduhs-projects.vercel.app) |
-| Game server | Railway | project `felt` (`aa4bf14b-6e69-4050-a086-aabc668a2906`), service `server`, env `production` | https://server-production-1b135132.up.railway.app |
-| Redis | Railway | service `Redis` (same project) | private only: `redis.railway.internal` |
+| Game server (live, since 2026-11-28) | Render | `felt-server` + `felt-redis` (free, Singapore), from `render.yaml` | https://felt-server-08v6.onrender.com |
+| Game server (old, unused) | Railway | project `felt` (`aa4bf14b-6e69-4050-a086-aabc668a2906`), service `server`, env `production` | https://server-production-1b135132.up.railway.app |
+| Redis (old, unused) | Railway | service `Redis` (same project) | private only: `redis.railway.internal` |
 | Auth + DB | Supabase | project `felt`, ref `zhggexxpffjbpunnchuk`, region ap-south-1 | https://zhggexxpffjbpunnchuk.supabase.co |
 
 Supabase signs tokens with ES256 (JWT signing keys); JWKS is at `<url>/auth/v1/.well-known/jwks.json`. Anonymous sign-ins are on, Google is off.
@@ -18,6 +19,8 @@ Supabase signs tokens with ES256 (JWT signing keys); JWKS is at `<url>/auth/v1/.
 `render.yaml` at the repo root creates `felt-server` (Docker, free) and `felt-redis` (free Key Value) in Singapore: Render dashboard, **New > Blueprint**, branch `rebuild`. Render asks for `SUPABASE_SERVICE_ROLE_KEY`. Auto-deploy is off, so deploy by hand ("Manual Deploy"). Free tier: sleeps after 15 min without traffic, and a Redis restart loses live games. Apply pending migrations and point Vercel's `VITE_SERVER_URL` at the Render URL.
 
 ## Redeploy
+
+**Current setup:** deploy the server with Render's "Manual Deploy" (branch `rebuild`); the Railway lines below are only for the old, unused server. Deploy the web from a clean export of the commit (`git archive HEAD` into an empty folder, plus `.vercel/project.json`), so no local `.env` or test files are uploaded.
 
 Run from the repo root (the working tree is uploaded; no GitHub link).
 
