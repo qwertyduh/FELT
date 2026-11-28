@@ -63,6 +63,11 @@ export const RoomRecordSchema = z
     names: z.record(UserId, z.string().min(1).max(20)).optional(),
     /** Removed by the host and not asked again since: told so if they come back. */
     kicked: z.array(UserId).optional(),
+    /**
+     * Muted by the host (`host:mute`): no chat or reactions. By user, so it holds through leaving
+     * the seat, removal and re-admission, and a change of host.
+     */
+    muted: z.array(UserId).optional(),
     /** Blinds the host set while a hand was running; taken up when the next one is dealt. */
     nextBlinds: z
       .object({ smallBlind: PositiveChipsSchema, bigBlind: PositiveChipsSchema })

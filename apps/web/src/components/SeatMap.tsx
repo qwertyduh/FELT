@@ -4,6 +4,7 @@
  */
 import type { PublicRoomState, PublicSeat } from '@felt/protocol';
 import { chips, shortChips } from '../lib/seating';
+import { ReactionBubble } from './chat/ReactionBubble';
 import { AwayMark } from './Table';
 
 /** Fixed box so nine seats never overlap on a 320px screen. */
@@ -62,6 +63,7 @@ function Taken({
       </span>
       <span className="text-cream/75 tabular-nums">{shortChips(seat.stack)}</span>
       {!seat.connected && <AwayMark />}
+      <ReactionBubble userId={seat.userId} />
     </li>
   );
 }

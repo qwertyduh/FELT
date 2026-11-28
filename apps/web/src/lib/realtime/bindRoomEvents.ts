@@ -1,5 +1,8 @@
 import type { FeltSocket } from './socketClient';
 import {
+  applyChatHistory,
+  applyChatMessage,
+  applyReaction,
   addJoinRequest,
   addTopUpRequest,
   applyHostInbox,
@@ -33,6 +36,9 @@ export function bindRoomEvents(socket: Listenable): () => void {
   socket.on('host:topup_request', addTopUpRequest);
   socket.on('player:topup_status', applyTopUpStatus);
   socket.on('player:topup_decision', applyTopUpDecision);
+  socket.on('chat:message', applyChatMessage);
+  socket.on('chat:history', applyChatHistory);
+  socket.on('chat:reaction', applyReaction);
   socket.on('connect', onConnect);
   return () => {
     socket.off('room:state', onState);
@@ -44,6 +50,9 @@ export function bindRoomEvents(socket: Listenable): () => void {
     socket.off('host:topup_request', addTopUpRequest);
     socket.off('player:topup_status', applyTopUpStatus);
     socket.off('player:topup_decision', applyTopUpDecision);
+    socket.off('chat:message', applyChatMessage);
+    socket.off('chat:history', applyChatHistory);
+    socket.off('chat:reaction', applyReaction);
     socket.off('connect', onConnect);
   };
 }

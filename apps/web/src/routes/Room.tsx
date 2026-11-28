@@ -487,8 +487,9 @@ function Frame({
       className="flex flex-1 flex-col"
       style={{ animation: 'felt-rise 380ms cubic-bezier(0.2, 0.7, 0.2, 1) both' }}
     >
-      {/* Under 375px "Home" is its arrow alone, so that everything fits on one row. */}
-      <header className="flex items-center justify-between gap-2 min-[375px]:gap-3">
+      {/* Under 375px "Home" is its arrow alone, so that everything fits on one row; under 430px the
+          code takes two lines. */}
+      <header className="flex items-center justify-between gap-2 min-[430px]:gap-3">
         <Link to="/" className="inline-flex min-h-11 min-w-11 items-center text-base text-brass">
           <span aria-hidden="true" className="min-[375px]:mr-2">
             ←
@@ -497,10 +498,11 @@ function Frame({
         </Link>
         {action}
         <div className="flex min-w-0 items-center gap-1 min-[360px]:gap-2">
-          <span ref={setSlot} className="shrink-0 empty:hidden" />
+          <span ref={setSlot} className="flex shrink-0 gap-1 empty:hidden" />
           <p
             data-testid="room-code"
-            className="min-w-0 truncate font-display text-base text-brass min-[360px]:tracking-wider min-[375px]:text-lg min-[375px]:tracking-widest"
+            // Narrow: as wide as its longest part, so it breaks after the hyphen.
+            className="min-w-0 font-display text-base text-brass max-[429px]:w-min max-[429px]:text-right max-[429px]:leading-tight min-[430px]:truncate min-[430px]:text-lg min-[430px]:tracking-widest"
           >
             {code}
           </p>

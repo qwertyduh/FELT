@@ -157,7 +157,7 @@ export function toPublicState(
       handStatus: player?.status ?? null,
       sittingOut: seat.sittingOut,
       connected: isConnected(seat.userId),
-      muted: false, // P55
+      muted: room.muted?.includes(seat.userId) ?? false,
       leaving: seat.leaving === true,
       ...(seat.sittingOut && !seat.leaving && seat.sitOutReason
         ? { sitOutReason: seat.sitOutReason }

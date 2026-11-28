@@ -1,7 +1,7 @@
 /**
  * Host controls (P44, PRD 5.2): pause or resume, change the blinds, the automatic blind increase
- * or how long a dropped player's seat is held (P45), remove a player, hand over the
- * room, end the game. A button in the page header (so nothing on the table moves for it) opens a
+ * or how long a dropped player's seat is held (P45), mute or unmute a player's chat (P55), remove a
+ * player, hand over the room, end the game. A button in the page header (so nothing on the table moves for it) opens a
  * sheet over the bottom of the screen (`data-cover`: nothing under it takes a tap). Removing,
  * handing over and ending each take a second, named step, which says what will really happen: a
  * player still in the hand, or a game with a hand being played, goes only when that hand is over.
@@ -47,6 +47,7 @@ type View =
   | { name: 'blinds' }
   | { name: 'increase' }
   | { name: 'hold' }
+  | { name: 'mutes' }
   | { name: 'kick' | 'transfer'; userId: string }
   | {
       name: 'end';
@@ -302,6 +303,16 @@ function Sheet({
       : null;
   // From the real state: during an all-in run-out the hand is already over.
   const hand = room.hand !== null && room.hand.street !== 'ended';
+  /**
+   * An all-in run-out still on the table: the server ends the game only after it, as for a hand in
+   * play (it also looks at the clock, but once that time has passed a new state follows at once).
+   * The words must not tell by any result.
+   */
+  const outcome = room.hand?.outcome;
+  const runout =
+    resultPending ||
+    (outcome !== undefined && outcome.runoutFrom !== null && outcome.nextHandAt !== null);
+  const later = hand || runout;
   const ending = room.ending === true;
   // The chosen player has gone (or can no longer be removed or host): nothing left to confirm.
   if (
@@ -310,13 +321,35 @@ function Sheet({
   ) {
     setView({ name: 'menu' });
   }
-  if (view.name === 'end' && ending && hand) setView({ name: 'menu' });
+  if (view.name === 'end' && ending && later) setView({ name: 'menu' });
 
   const open = (next: View) => {
     setError(null);
     setView(next);
   };
   const back = () => open({ name: 'menu' });
+  // A muted player who has since become host may lift their own mute.
+  const myself = room.seats.find((s) => s?.userId === userId && s.muted);
+  const mutable = [
+    ...(myself ? [{ userId, username: 'You', muted: true }] : []),
+    ...members
+      .filter((m) => m.userId !== userId)
+      .map((m) => ({
+        userId: m.userId,
+        username: m.username ?? `Player ${m.userId.slice(0, 4)}`,
+        muted: m.muted === true,
+      })),
+  ];
+
+  /** Unlike `send`, stays here: the list says what it did. */
+  async function mute(target: string, muted: boolean) {
+    if (!ready || busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await client.emitWithAck('host:mute', { userId: target, muted });
+    setBusy(false);
+    if (!res.ok) setError(hostFailure(res.error, 'host:mute'));
+  }
 
   async function send(event: ClientEventName, emit: () => Promise<AckResult>) {
     if (!ready || busy) return;
@@ -429,7 +462,7 @@ function Sheet({
               ))}
             </ul>
           )}
-          {ending && hand ? (
+          {ending && later ? (
             <p role="status" className="shrink-0 py-2 text-center text-base text-cream">
               Game ends after this hand
             </p>
@@ -442,9 +475,15 @@ function Sheet({
               End game
             </button>
           )}
-          <button type="button" className={`${OUTLINE} ${ROW}`} onClick={onClose}>
-            Close
-          </button>
+          {/* Side by side: the menu has no height to spare on a short screen. */}
+          <div className="grid shrink-0 grid-cols-2 gap-2">
+            <button type="button" className={OUTLINE} onClick={() => open({ name: 'mutes' })}>
+              Chat mutes
+            </button>
+            <button type="button" className={OUTLINE} onClick={onClose}>
+              Close
+            </button>
+          </div>
         </>
       )}
       {view.name === 'blinds' && (
@@ -500,6 +539,43 @@ function Sheet({
           </button>
         </div>
       )}
+      {view.name === 'mutes' && (
+        <div className="flex min-h-0 flex-col gap-2">
+          <p className="text-center text-sm text-cream/75">
+            A muted player can&apos;t chat or react. Everything else stays.
+          </p>
+          {mutable.length === 0 ? (
+            <p className="py-2 text-center text-base text-cream">Nobody else is here yet.</p>
+          ) : (
+            <ul aria-label="Chat mutes" className="flex min-h-12 flex-col gap-2 overflow-y-auto">
+              {mutable.map((m) => (
+                <li key={m.userId} className="flex shrink-0 items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-base text-cream">
+                    {m.username}
+                    {m.muted && <span className="text-sm text-chip-red"> · muted</span>}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={
+                      m.userId === userId
+                        ? 'Unmute yourself'
+                        : `${m.muted ? 'Unmute' : 'Mute'} ${m.username}`
+                    }
+                    className={`${OUTLINE} w-24 shrink-0`}
+                    // A new id once it flips: a second tap cannot flip it straight back.
+                    {...tap(`mute:${m.userId}:${m.muted}`, () => void mute(m.userId, !m.muted))}
+                  >
+                    {m.muted ? 'Unmute' : 'Mute'}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button type="button" className={`${OUTLINE} ${ROW}`} onClick={back}>
+            Back
+          </button>
+        </div>
+      )}
       {view.name === 'kick' && target && (
         <Confirm
           title={`Remove ${target.username}?`}
@@ -533,7 +609,7 @@ function Sheet({
       )}
       {view.name === 'end' && (
         <Confirm
-          title={hand ? 'End the game after this hand?' : 'End the game for everyone?'}
+          title={later ? 'End the game after this hand?' : 'End the game for everyone?'}
           detail={`This can't be undone.${
             hand
               ? ` The hand in play is finished first and nobody is refunded. No new hand is dealt.${
@@ -543,11 +619,15 @@ function Sheet({
                     ? ` The turn timer is off, so every turn now gets ${FORCED_TURN_SECONDS} seconds, then checks or folds.`
                     : ''
                 }`
-              : ''
+              : runout
+                ? ` The hand on the table is finished first. No new hand is dealt.${
+                    room.paused ? ' The game resumes so it can be finished.' : ''
+                  }`
+                : ''
           }`}
-          yes={hand ? 'End after this hand' : 'End game now'}
+          yes={later ? 'End after this hand' : 'End game now'}
           // Held again if what it would do changes.
-          id={`yes-end:${hand ? 'after' : 'now'}`}
+          id={`yes-end:${later ? 'after' : 'now'}`}
           tap={tap}
           busy={busy}
           onBack={back}

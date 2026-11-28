@@ -5,13 +5,16 @@
  * below). Nothing is sent before `ready`, and every send waits for its ack; the seats themselves
  * only ever change through `room:state`.
  *
- * The hand-rank button is rendered from here, which knows what the table shows, into the header.
+ * The hand-rank and chat buttons are rendered from here, which knows what the table shows, into the
+ * header. The open chat panel takes the place of the top part; a turn or a proposed award arriving
+ * closes it.
  *
  * Renders two siblings: a top part that gives up height (and scrolls) when the request cards are
  * up, and a footer that stays whole, so Start and the buy-in panel are never pushed out of view.
  */
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import type { PublicRoomState } from '@felt/protocol';
+import { setChatOpen, useRoomStore } from '../lib/realtime/roomStore';
 import type { SocketClient } from '../lib/realtime/socketClient';
 import { satOutByClock } from '../lib/satOut';
 import {
@@ -28,6 +31,9 @@ import { useShownRoom } from '../lib/useShownRoom';
 import { useStillCards } from '../lib/useStillCards';
 import { useTurnSignal } from '../lib/useTurnSignal';
 import { BuyMore } from './BuyMore';
+import { ChatButton } from './chat/ChatButton';
+import { ChatPanel } from './chat/ChatPanel';
+import { ChatPreview } from './chat/ChatPreview';
 import { InHeader } from './hand-ranks/headerSlot';
 import { TableHandRanks } from './hand-ranks/TableHandRanks';
 import { RoomLog } from './hybrid/RoomLog';
@@ -228,6 +234,17 @@ export function WaitingRoom({
 
   const hosting = room.hostId === userId;
   const mine = room.seats.find((s) => s?.userId === userId) ?? null;
+  const chatting = useRoomStore((s) => s.chatOpen) && room.status !== 'ended';
+  const live = room.status === 'playing' && room.hand && room.hand.street !== 'ended';
+  const hand = live ? room.hand! : null;
+  const myTurn = mine !== null && hand?.currentActor === mine.seat;
+  /** What must not be missed under an open chat: our turn, or an award with its short window. */
+  const urgent = hand && (myTurn || hand.pendingAwards.length > 0);
+  const urgentKey = urgent ? `${hand.handId}:${hand.street}:${myTurn}` : null;
+  // Only as it arrives: the panel may still be opened during a turn.
+  useLayoutEffect(() => {
+    if (urgentKey !== null) setChatOpen(false);
+  }, [urgentKey]);
   const started = room.status !== 'lobby';
   const full = room.seats.every(Boolean);
   /** The only amount a returning player may sit with: what they left with (0 if busted). */
@@ -395,12 +412,17 @@ export function WaitingRoom({
         <InHeader>
           {/* The room as shown: a run-out must not be given away. */}
           <TableHandRanks room={shown} userId={userId} ready={ready} />
+          <ChatButton userId={userId} />
         </InHeader>
       )}
-      <div className={`flex flex-1 flex-col gap-2 ${ABOVE_REQUESTS}`}>
+      {chatting && (
+        <ChatPanel room={room} me={mine} myTurn={myTurn} ready={ready} client={client} />
+      )}
+      {/* Hidden, not removed, while the chat has its place. */}
+      <div className={`flex-1 flex-col gap-2 ${chatting ? 'hidden' : 'flex'} ${ABOVE_REQUESTS}`}>
         {result && <ResultBanner room={shown} userId={userId} held={held} />}
         <div
-          className={`${rowClass} flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-1 ${
+          className={`${rowClass} relative flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-1 ${
             started ? '[[data-testid=entered-room]:has([data-testid=host-inbox])_&]:order-last' : ''
           }`}
         >
@@ -410,6 +432,7 @@ export function WaitingRoom({
           {started && <p className="text-sm text-brass tabular-nums">{blinds}</p>}
           {started && room.settings.mode === 'hybrid' && <RoomLog log={room.log} />}
           <InviteButton code={room.code} />
+          {room.settings.mode === 'online' && !chatting && <ChatPreview userId={userId} />}
         </div>
         {started ? (
           <Table {...seats} held={held} ready={ready} controls={seatControls('table')} />

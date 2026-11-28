@@ -27,6 +27,7 @@ import { SeatService } from './rooms/seatService';
 import { GameService } from './rooms/gameService';
 import { TopUpService } from './rooms/topUpService';
 import { HostService } from './rooms/hostService';
+import { ChatService } from './rooms/chatService';
 import { PresenceService } from './rooms/presenceService';
 import { KeepAliveService } from './rooms/keepAlive';
 import { StateBroadcaster } from './rooms/broadcaster';
@@ -202,6 +203,7 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
     hosts?: HostService;
     presence?: PresenceService;
     joins?: JoinService;
+    chat?: ChatService;
   } = {};
   const roomStore =
     typeof r.get === 'function' && typeof r.set === 'function'
@@ -215,6 +217,7 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
     late.games?.committed(room, before);
     late.topUps?.committed(room, before);
     late.presence?.committed(room);
+    late.chat?.committed(room);
   };
   const commitError = (err: unknown, room: Readonly<RoomRecord>): void =>
     app.log.error(
@@ -258,12 +261,20 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
       ...(deps.keepAliveMs === undefined ? {} : { intervalMs: deps.keepAliveMs }),
     });
     app.addHook('onClose', async () => keepAlive.close());
+    const chat = new ChatService({
+      io: app.realtime.io,
+      registry: roomRegistry,
+      ...(deps.roomTimers ? { timers: deps.roomTimers } : {}),
+    });
+    late.chat = chat;
+    app.realtime.register(chat.register);
     const joins = new JoinService({
       io: app.realtime.io,
       registry: roomRegistry,
       broadcaster,
       db,
       onEntered: (code) => void keepAlive.refresh(code),
+      welcome: (socket, room) => chat.welcome(socket, room),
       ...(deps.roomTimers ? { timers: deps.roomTimers } : {}),
       ...(deps.presenceDebounceMs === undefined
         ? {}

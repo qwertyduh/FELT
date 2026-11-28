@@ -1,6 +1,6 @@
 /**
  * Host controls (P44): `host:pause`, `host:resume`, `host:end`, `host:settings`,
- * `host:blind_increase`, `host:kick`,
+ * `host:blind_increase`, `host:kick`, `host:mute`,
  * `host:transfer` and `host:seat_hold` (P45). The rules (hostControls.ts) run inside the room's actor queue. What sockets are
  * told, and which ones lose the room, follows from the committed change (`committed`).
  */
@@ -23,6 +23,7 @@ import {
   changeSeatHold,
   end,
   kick,
+  mute,
   pause,
   resume,
   transfer,
@@ -107,6 +108,12 @@ export class HostService {
       socket,
       'host:kick',
       (p) => this.intent(socket, (room, userId, ctx) => kick(room, userId, p.userId, ctx.now)),
+      log,
+    );
+    onClientEvent(
+      socket,
+      'host:mute',
+      (p) => this.intent(socket, (room, userId) => mute(room, userId, p.userId, p.muted)),
       log,
     );
     onClientEvent(

@@ -436,10 +436,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** Playwright ends a game, shares the recap and opens the link logged-out.
 - _Note: GO. session:recap, recap screen, POST/GET /recaps, /recap/:slug. The table has no select policy (reads go through the server only), unlike the original design. Apply migration 20261128000000 to production before deploying the server; web and server deploy together. Owner to confirm: only the host's rate goes into the link; no image export (PRD mentions one); no way to revoke a link. Open: ending the game during a run-out shows the recap early (being fixed)._
 
-### ⬜ P55 · Chat & reactions
+### ✅ P55 · Chat & reactions
 - **Needs:** P32, P08
 - **Do:** Server `chat:send` (censor, 200-char cap, token bucket), `chat:react` (allow-list) and `host:mute`. UI: a chat panel (collapsed by default in hybrid) and reaction bubbles at seats.
 - **Done when:** tests for the rate limit, censoring and muting; a Playwright smoke test.
+- _Note: GO. chat:send, chat:react, host:mute; last 30 lines per room in server memory only. Owner to confirm: both modes start with the panel closed (online shows a 4s preview of new messages); only seated players send; room code wraps to two lines under 430px. Open: the filter misses spaced-out or variation-selector words; zero-width non-joiner is stripped (affects Persian and some Indic spelling)._
 
 ### ✅ P56 · Hand rankings button & sheet
 - **Needs:** P39, P17

@@ -18,6 +18,7 @@ import { chips, shortChips } from '../lib/seating';
 import { potName, potTotal, seatPosition, streetName, turnLine } from '../lib/table';
 import { turnTimer, type TurnTimer } from '../lib/turnClock';
 import { BlindCountdown } from './BlindCountdown';
+import { ReactionBubble } from './chat/ReactionBubble';
 import { Board } from './cards/Board';
 import { HoleCards } from './cards/HoleCards';
 import { CardBack, PlayingCard } from './cards/PlayingCard';
@@ -226,6 +227,7 @@ function Player({
       {holding && <Backs inward={inward} />}
       {!seat.connected && <AwayMark />}
       {dealer && <Dealer inward={inward} />}
+      <ReactionBubble userId={seat.userId} />
     </li>
   );
 }

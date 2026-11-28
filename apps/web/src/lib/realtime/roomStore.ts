@@ -1,8 +1,12 @@
 import { create } from 'zustand';
 import {
+  CHAT_HISTORY_LIMIT,
+  ChatMessageSchema,
   PublicRoomStateSchema,
   RecapSchema,
   parseTolerant,
+  serverEventSchemas,
+  type ChatMessage,
   type PublicRoomState,
   type Recap,
   type ServerToClientEvents,
@@ -17,7 +21,21 @@ type TopUpRequest = Parameters<ServerToClientEvents['host:topup_request']>[0];
 type TopUpStatus = Parameters<ServerToClientEvents['player:topup_status']>[0];
 type TopUpDecision = Parameters<ServerToClientEvents['player:topup_decision']>[0];
 
+/** A chat line as this screen holds it; `unread` until the panel has been open since it came. */
+export type ChatLine = ChatMessage & { unread: boolean };
+/** How many lines a screen keeps. */
+export const CHAT_KEPT = 50;
+/** How long a reaction stays at its seat. */
+export const REACTION_SHOW_MS = 3_000;
+
 export interface RoomStoreState {
+  /** Oldest first. */
+  chat: ChatLine[];
+  chatOpen: boolean;
+  /** What is typed but not sent: kept when the panel is put away. */
+  chatDraft: string;
+  /** The latest reaction of each user still on show; `n` tells one from the next. */
+  reactions: Record<string, { emoji: string; n: number }>;
   room: PublicRoomState | null;
   lastVersion: number;
   status: 'empty' | 'ready';
@@ -49,6 +67,10 @@ export interface RoomStoreState {
 const emptyInbox: RoomStoreState['hostInbox'] = { joinRequests: [], topUpRequests: [] };
 
 export const initialRoomState: RoomStoreState = {
+  chat: [],
+  chatOpen: false,
+  chatDraft: '',
+  reactions: {},
   room: null,
   lastVersion: -1,
   status: 'empty',
@@ -185,6 +207,71 @@ export function applyTopUpDecision(decision: TopUpDecision): void {
 
 export function clearTopUpDecision(): void {
   useRoomStore.setState({ topUpDecision: null });
+}
+
+/** Merged by id, oldest first, the newest `CHAT_KEPT`. */
+function addChat(lines: ChatMessage[], unread: boolean): void {
+  useRoomStore.setState((s) => {
+    const held = new Set(s.chat.map((m) => m.id));
+    const fresh = lines
+      .filter((m) => !held.has(m.id))
+      .map((m) => ({ ...m, unread: unread && !s.chatOpen }));
+    if (fresh.length === 0) return s;
+    return { chat: [...s.chat, ...fresh].sort((a, b) => a.at - b.at).slice(-CHAT_KEPT) };
+  });
+}
+
+/** A line that does not fit the schema is dropped: chat is never worth a reload screen. */
+export function applyChatMessage(next: unknown): void {
+  const parsed = parseTolerant(ChatMessageSchema, next);
+  if (parsed.success) return addChat([parsed.data], true);
+  useRoomStore.setState((s) => ({ invalidDropped: s.invalidDropped + 1 }));
+}
+
+/**
+ * What the room kept, on entry. On a screen that already had lines (a reconnect) the ones it
+ * missed are unread; on a fresh one they are just what was said before.
+ */
+export function applyChatHistory(next: unknown): void {
+  const parsed = parseTolerant(serverEventSchemas['chat:history'], next);
+  if (!parsed.success) {
+    useRoomStore.setState((s) => ({ invalidDropped: s.invalidDropped + 1 }));
+    return;
+  }
+  const known = useRoomStore.getState().chat.length > 0;
+  addChat(parsed.data.messages.slice(-CHAT_HISTORY_LIMIT), known);
+}
+
+let reactionCount = 0;
+export function applyReaction(next: unknown): void {
+  const parsed = parseTolerant(serverEventSchemas['chat:reaction'], next);
+  if (!parsed.success) {
+    useRoomStore.setState((s) => ({ invalidDropped: s.invalidDropped + 1 }));
+    return;
+  }
+  const { userId, emoji } = parsed.data;
+  const n = ++reactionCount;
+  useRoomStore.setState((s) => ({ reactions: { ...s.reactions, [userId]: { emoji, n } } }));
+  setTimeout(() => {
+    useRoomStore.setState((s) => {
+      if (s.reactions[userId]?.n !== n) return s;
+      const { [userId]: gone, ...reactions } = s.reactions;
+      void gone;
+      return { reactions };
+    });
+  }, REACTION_SHOW_MS);
+}
+
+/** Opening it, or closing it, reads whatever was there. */
+export function setChatOpen(chatOpen: boolean): void {
+  useRoomStore.setState((s) => ({
+    chatOpen,
+    chat: s.chat.some((m) => m.unread) ? s.chat.map((m) => ({ ...m, unread: false })) : s.chat,
+  }));
+}
+
+export function setChatDraft(chatDraft: string): void {
+  useRoomStore.setState({ chatDraft });
 }
 
 /**

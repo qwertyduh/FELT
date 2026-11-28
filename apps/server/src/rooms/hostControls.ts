@@ -159,6 +159,32 @@ export function kick(
 }
 
 /**
+ * `host:mute`: no chat or reactions from that user until unmuted. The host cannot mute themselves;
+ * one who was muted before taking over may lift it.
+ */
+export function mute(
+  room: Readonly<RoomRecord>,
+  actorId: string,
+  targetId: string,
+  muted: boolean,
+): SeatResult {
+  const gated = gate(room, actorId);
+  if (gated) return gated;
+  if (muted && targetId === actorId) {
+    return refuse(room, 'illegal_action', 'you cannot mute yourself');
+  }
+  if (!room.admitted.includes(targetId)) {
+    return refuse(room, 'not_found', 'that player is not in the room');
+  }
+  const list = room.muted ?? [];
+  if (list.includes(targetId) === muted) return done(room);
+  return done({
+    ...room,
+    muted: muted ? [...list, targetId] : list.filter((id) => id !== targetId),
+  });
+}
+
+/**
  * `host:transfer`: to a connected player with a seat (the seat carries the username the room
  * preview shows, and an absent host would stall the game). Host powers move with this one change.
  */

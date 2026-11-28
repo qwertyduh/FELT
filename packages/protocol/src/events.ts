@@ -116,6 +116,8 @@ export type GameActPayload = z.infer<typeof GameActPayloadSchema>;
 export const AWARD_CONFIRM_MS = 5_000;
 
 export const CHAT_MAX_LENGTH = 200;
+/** The most recent messages a room keeps (in server memory) for whoever (re)enters it. */
+export const CHAT_HISTORY_LIMIT = 30;
 /** Allow-list for quick reactions (decision: PRD/ARCH leave the set open). */
 export const REACTION_EMOJIS = ['👍', '👏', '😂', '😮', '😭', '😡', '🔥', '🙏'] as const;
 
@@ -325,6 +327,8 @@ export const HostMembersSchema = z
             leaving: z.boolean(),
             /** Being removed when the running hand ends; absent otherwise. */
             removing: z.literal(true).optional(),
+            /** Muted by the host in chat and reactions; absent otherwise. */
+            muted: z.literal(true).optional(),
           })
           .strict(),
       )
@@ -332,6 +336,21 @@ export const HostMembersSchema = z
   })
   .strict();
 export type HostMember = z.infer<typeof HostMembersSchema>['members'][number];
+
+/**
+ * One chat line, as the server cleaned and censored it. Plain text: show it as text, never as
+ * markup.
+ */
+export const ChatMessageSchema = z
+  .object({
+    id: IdSchema,
+    userId: UserIdSchema,
+    username: z.string().min(1).max(20),
+    text: z.string().min(1).max(CHAT_MAX_LENGTH),
+    at: EpochMsSchema,
+  })
+  .strict();
+export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
 export const serverEventSchemas = {
   'room:join_pending': z.object({ requestId, expiresAt: EpochMsSchema }).strict(),
@@ -382,13 +401,13 @@ export const serverEventSchemas = {
   'hand:result': HandResultPayloadSchema,
   /** A new turn, or a new deadline for it (resume). `deadline` is null with the timer off. */
   'turn:start': z.object({ userId: UserIdSchema, deadline: EpochMsSchema.nullable() }).strict(),
-  'chat:message': z
-    .object({
-      userId: UserIdSchema,
-      username: z.string().min(1).max(20),
-      text: z.string().min(1).max(CHAT_MAX_LENGTH),
-      at: EpochMsSchema,
-    })
+  'chat:message': ChatMessageSchema,
+  /**
+   * To one socket on entry: the room's recent messages that were sent while its user was admitted,
+   * oldest first.
+   */
+  'chat:history': z
+    .object({ messages: z.array(ChatMessageSchema).max(CHAT_HISTORY_LIMIT) })
     .strict(),
   'chat:reaction': z.object({ userId: UserIdSchema, emoji: z.enum(REACTION_EMOJIS) }).strict(),
   /**

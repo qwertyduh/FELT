@@ -34,6 +34,8 @@ export function TableHandRanks({
       ? currentHand(own.holeCards, hand.board)
       : null;
   const line = ready ? turnLine(room, userId) : 'Waiting for the connection';
+  /** A long name gives way, never the words after it. */
+  const tail = ["'s turn", ' is away'].find((end) => line.endsWith(end));
   const timer = ready ? turnTimer(room) : null;
   return (
     <HandRanksButton
@@ -47,11 +49,18 @@ export function TableHandRanks({
             <p
               role="status"
               data-testid="ranks-turn-line"
-              className={`line-clamp-2 min-w-0 text-right leading-tight wrap-anywhere ${
-                line === 'Your turn' ? 'text-base font-bold text-brass' : 'text-sm text-cream'
-              }`}
+              className={`min-w-0 text-right leading-tight wrap-anywhere ${
+                tail ? 'flex justify-end' : 'line-clamp-2'
+              } ${line === 'Your turn' ? 'text-base font-bold text-brass' : 'text-sm text-cream'}`}
             >
-              {line}
+              {tail ? (
+                <>
+                  <span className="min-w-0 truncate">{line.slice(0, -tail.length)}</span>
+                  <span className="shrink-0 whitespace-pre">{tail}</span>
+                </>
+              ) : (
+                line
+              )}
             </p>
             {timer && <TurnRing timer={timer} testId="ranks-turn-ring" />}
           </>

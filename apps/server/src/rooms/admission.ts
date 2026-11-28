@@ -202,6 +202,7 @@ export function hostMembers(room: Readonly<RoomRecord>): HostMember[] {
         seated: seat !== undefined,
         leaving: seat?.leaving === true,
         ...(room.removals?.includes(userId) ? { removing: true as const } : {}),
+        ...(room.muted?.includes(userId) ? { muted: true as const } : {}),
       };
     });
 }

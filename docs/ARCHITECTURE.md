@@ -254,7 +254,7 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | `host:blind_increase` | `{ minutes, multiplier }` (`minutes` 1–240 or null = off; multiplier 1.5 or 2) | Host |
 | `host:kick` | `{ userId }`. A player still in the running hand (not folded) is marked for removal: they play it out and are removed and cashed out when it ends. Anyone else: what `room:leave` does, then admission is removed, at once | Host |
 | `host:transfer` | `{ userId }` (seated and connected) | Host |
-| `host:mute` | `{ userId, muted }` | Host |
+| `host:mute` | `{ userId, muted }`. Stops that user's chat and reactions; kept in the room record by user, so it survives restarts, rejoining and a change of host. The host cannot mute themselves, but one muted before taking over may lift it | Host |
 | `host:seat_hold` | `{ minutes }` (1–30, default 3; applies to later disconnects) | Host |
 | `host:force_fold` | `{ handId, turnSeq, userId }`. Folds a disconnected player on turn, only with the turn timer off; cannot be undone | Host |
 | `hand:show` | `{ handId }`. Turns your own cards face up after an online hand ends (fold-out winner, mucked or folded), until the next deal | Admitted player dealt into the hand, online |
@@ -263,8 +263,8 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | `host:dispute` | `{ handId }` | Any seated player or the host, during the 5s award window (hybrid) |
 | `host:undo` | `{ handId, turnSeq }` (the last move or deal of the running hand) | Host, hybrid |
 | `host:adjust_stack` | `{ userId, amount, reason, stack }` (signed delta; `stack` = what the host saw). Not while that player is still in the hand | Host, hybrid |
-| `chat:send` | `{ text }` (≤ 200 chars) | Seated player |
-| `chat:react` | `{ emoji }` (allow-list) | Seated player |
+| `chat:send` | `{ text }` (≤ 200 chars). Control, bidi and other invisible characters are stripped, then profanity censored. 5 at once, then 1 per 2s, per user across all sockets | Seated player, not muted |
+| `chat:react` | `{ emoji }` (allow-list). 4 at once, then 1 per 2s, per user | Seated player, not muted |
 
 `handId` on game actions prevents a stale tap from a previous hand being applied.
 
@@ -281,7 +281,7 @@ Web and server deploy separately and open tabs keep old bundles.
 | `room:join_pending` | `{ requestId, expiresAt }` | Requester |
 | `room:join_decision` | `{ approved, retryAfter?, ended? }` | Requester |
 | `room:kicked` | `{ code }` | A removed player's sockets (also on `room:enter` until they ask again) |
-| `host:members` | `{ members: [{ userId, username, seated, leaving, removing? }] }` (everyone admitted; empty to a host who handed over) | Host |
+| `host:members` | `{ members: [{ userId, username, seated, leaving, removing?, muted? }] }` (everyone admitted; empty to a host who handed over) | Host |
 | `room:displaced` | `{ code }` | A socket whose user opened the room elsewhere; the client stops reconnecting |
 | `host:join_request` | `{ requestId, userId, username }` | Host |
 | `host:topup_request` | `{ requestId, userId, amount }` | Host |
@@ -291,7 +291,8 @@ Web and server deploy separately and open tabs keep old bundles.
 | `hand:private` | `{ handId, holeCards }` | One player's own sockets (online mode) |
 | `hand:result` | Pots, winners, revealed hands | Room |
 | `turn:start` | `{ userId, deadline }` (`deadline` null with the timer off). Sent on each new turn and on resume; `room:state.hand.turnDeadline` is the same value (null while paused) and is what a reconnecting client uses | Room |
-| `chat:message` / `chat:reaction` | Message | Room |
+| `chat:message` / `chat:reaction` | `{ id, userId, username, text, at }` / `{ userId, emoji }` | Room |
+| `chat:history` | `{ messages }`: the last 30 or fewer, only those sent while this user was admitted. Held in server memory (not the room record), so a restart or the end of the game drops it | One socket, on entry |
 | `session:recap` | `{ code, hostId, endedAt, players }` (chips; settle-up is computed from them with the engine's `settleUp`). Sent when the room becomes ended, and to an admitted player who enters the ended room (before the `room_ended` ack) | Room / one socket |
 | `error` | `{ code, message }` | One socket |
 

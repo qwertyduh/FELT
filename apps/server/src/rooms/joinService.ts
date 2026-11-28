@@ -62,6 +62,8 @@ export interface JoinServiceDeps {
   db: Db | null;
   /** Somebody admitted has just entered the room (keepAlive.ts). */
   onEntered?: (code: RoomCode) => void;
+  /** Whatever else a socket that has just entered is owed (chat history). */
+  welcome?: (socket: FeltSocket, room: Readonly<RoomRecord>) => void;
   timers?: Timers;
   newId?: () => string;
   presenceDebounceMs?: number;
@@ -88,6 +90,7 @@ export class JoinService {
   private readonly broadcaster: JoinServiceDeps['broadcaster'];
   private readonly db: Db | null;
   private readonly onEntered: JoinServiceDeps['onEntered'];
+  private readonly welcome: JoinServiceDeps['welcome'];
   private readonly timers: Timers;
   private readonly newId: () => string;
   private readonly expiryTimers = new Map<RoomCode, unknown>();
@@ -105,6 +108,7 @@ export class JoinService {
     this.broadcaster = deps.broadcaster;
     this.db = deps.db;
     this.onEntered = deps.onEntered;
+    this.welcome = deps.welcome;
     this.timers = deps.timers ?? realTimers;
     this.newId = deps.newId ?? randomUUID;
     this.presenceDebounceMs = deps.presenceDebounceMs ?? PRESENCE_DEBOUNCE_MS;
@@ -402,6 +406,8 @@ export class JoinService {
     socket.data.session = session;
     // At once, not at the next sweep: a room reconnected to may be close to expiring.
     this.onEntered?.(code);
+    // In the same step as the channel join, so no chat line is missed or sent twice.
+    this.welcome?.(socket, room);
     if (room.hostId === userId) {
       socket.emit('host:inbox', hostInbox(room, this.timers.now()));
       socket.emit('host:members', { members: hostMembers(room) });
