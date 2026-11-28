@@ -1,7 +1,8 @@
 /**
  * The table during a game (P39): seats with names, stacks and this street's bets, the pot(s), the
  * dealer button and whose turn it is, all straight from `room:state`. Online it also has the board,
- * card backs for the others still in the hand and the viewer's own cards (P49). Once a hand has
+ * card backs for the others still in the hand and the viewer's own cards (P49). Hybrid has a board
+ * of blank cards that only shows which streets have been dealt on the real table. Once a hand has
  * ended, the hands the server revealed turn face up on their seats, in its order, and the winners
  * are marked (P50); while an all-in result is held back the room given here is the one `asShown`
  * makes, which has no winners. It only shows; the one thing to tap is an open seat, for someone who
@@ -20,6 +21,7 @@ import { turnTimer, type TurnTimer } from '../lib/turnClock';
 import { BlindCountdown } from './BlindCountdown';
 import { ReactionBubble } from './chat/ReactionBubble';
 import { Board } from './cards/Board';
+import { HybridBoard } from './cards/HybridBoard';
 import { HoleCards } from './cards/HoleCards';
 import { CardBack, PlayingCard } from './cards/PlayingCard';
 import { SeatRing, TurnRing } from './TurnRing';
@@ -243,21 +245,18 @@ function Middle({ room }: { room: PublicRoomState }) {
       </>
     );
   }
-  const online = room.settings.mode === 'online';
   return (
     <>
       <p className="text-sm text-cream/75">{streetName(hand.street)}</p>
-      {online && <Board cards={hand.board} />}
+      {room.settings.mode === 'online' ? (
+        <Board cards={hand.board} />
+      ) : (
+        <HybridBoard handId={hand.handId} dealt={hand.boardDealt ?? 0} />
+      )}
+      {/* One line under the board, to leave the felt its height. */}
       <p data-testid="pot" className="leading-tight">
-        {/* One line under the board, to leave the felt its height. */}
-        <span
-          className={`text-xs tracking-widest text-brass uppercase ${online ? 'mr-2' : 'block'}`}
-        >
-          Pot
-        </span>
-        <span
-          className={`font-display font-semibold text-cream tabular-nums ${online ? 'text-2xl' : 'text-3xl'}`}
-        >
+        <span className="mr-2 text-xs tracking-widest text-brass uppercase">Pot</span>
+        <span className="font-display text-2xl font-semibold text-cream tabular-nums">
           {shortChips(potTotal(room), 10_000_000)}
         </span>
       </p>
@@ -316,7 +315,7 @@ export function Table({
   useEffect(() => {
     const parent = table.current?.parentElement;
     if (focus === null || !parent) return;
-    // Online the board matters most (the turn line below already names who is to act).
+    // The board matters most (the turn line below already names who is to act).
     const reveal = () =>
       (
         table.current?.querySelector('[data-testid="board"]') ??
@@ -332,20 +331,14 @@ export function Table({
     <div
       ref={table}
       data-testid="table"
-      // Online the felt is wider and the seats narrower, for the board between them.
-      className={`relative max-h-[32rem] min-h-64 flex-1 shrink-0 [--seat-w:4.25rem] ${
-        online ? '-mx-2' : 'w-full min-[360px]:[--seat-w:5rem]'
-      }`}
+      // The felt is wide and the seats narrow, for the board between them.
+      className="relative -mx-2 max-h-[32rem] min-h-64 flex-1 shrink-0 [--seat-w:4.25rem]"
     >
       <div
         aria-hidden="true"
         className="absolute inset-x-8 inset-y-7 rounded-[45%] border-4 border-brass-dim bg-felt-800"
       />
-      <div
-        className={`absolute inset-y-14 flex flex-col items-center justify-center text-center ${
-          online ? 'inset-x-[calc(var(--seat-w)+1px)]' : 'inset-x-17 min-[360px]:inset-x-20'
-        }`}
-      >
+      <div className="absolute inset-x-[calc(var(--seat-w)+1px)] inset-y-14 flex flex-col items-center justify-center text-center">
         <Middle room={room} />
       </div>
       <ul aria-label="Seats">

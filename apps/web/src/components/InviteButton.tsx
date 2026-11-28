@@ -1,46 +1,39 @@
+/**
+ * Invite: opens the sheet with the code and link. It is open by itself once, for whoever has just
+ * created the room, and gets out of the way when `dismissKey` says something cannot wait.
+ */
 import { useEffect, useState } from 'react';
+import { forgetCreated, isJustCreated } from '../lib/justCreated';
+import { InviteSheet } from './InviteSheet';
 
-/** Share sheet where there is one, else the clipboard, else the link to copy by hand. */
-export function InviteButton({ code }: { code: string }) {
-  const [result, setResult] = useState<'copied' | 'manual' | null>(null);
-  const url = `${window.location.origin}/r/${code}`;
-
-  useEffect(() => {
-    if (result !== 'copied') return;
-    const id = setTimeout(() => setResult(null), 3_000);
-    return () => clearTimeout(id);
-  }, [result]);
-
-  async function invite() {
-    if (typeof navigator.share === 'function') {
-      try {
-        return await navigator.share({ title: 'Join my FELT table', url });
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return; // sheet dismissed
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(url);
-      setResult('copied');
-    } catch {
-      setResult('manual'); // no clipboard (e.g. plain http) or permission refused
-    }
+export function InviteButton({
+  code,
+  dismissKey = null,
+}: {
+  code: string;
+  /** Closes the sheet whenever it changes to something. */
+  dismissKey?: string | null;
+}) {
+  const [open, setOpen] = useState(() => isJustCreated(code));
+  useEffect(() => forgetCreated(code), [code]);
+  // Only as it arrives: the sheet may still be opened during a turn.
+  const [seenKey, setSeenKey] = useState(dismissKey);
+  if (seenKey !== dismissKey) {
+    setSeenKey(dismissKey);
+    if (dismissKey !== null) setOpen(false);
   }
 
   return (
     <>
       <button
         type="button"
+        aria-haspopup="dialog"
         className="min-h-11 shrink-0 rounded-xl border border-brass px-3 text-base font-semibold text-brass active:brightness-90"
-        onClick={() => void invite()}
+        onClick={() => setOpen(true)}
       >
-        <span aria-live="polite">{result === 'copied' ? 'Link copied' : 'Invite'}</span>
+        Invite
       </button>
-      {result === 'manual' && (
-        <p className="w-full text-sm text-cream/75">
-          Copy this link: <span className="break-all text-cream select-all">{url}</span>
-        </p>
-      )}
+      {open && <InviteSheet code={code} onClose={() => setOpen(false)} />}
     </>
   );
 }

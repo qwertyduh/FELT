@@ -25,7 +25,12 @@ export interface LiveHand extends Revealing {
   undo?: PublicHand['undo'];
   /** When the hand after an ended one is due. */
   nextHandAt?: number | null;
+  /** Hybrid, once ended: the street it ended on. */
+  endedOn?: HandState['street'] | undefined;
 }
+
+/** Hybrid: board cards the host has dealt on the table by each street. */
+const BOARD_DEALT = { preflop: 0, flop: 3, turn: 4, river: 5, showdown: 5, ended: 0 } as const;
 
 function toPublicOptions(state: HandState): PublicHand['options'] {
   const legal = legalActions(state);
@@ -46,6 +51,12 @@ function toPublicHand(live: LiveHand): PublicHand {
     options: toPublicOptions(state),
     street: state.street,
     board: [...state.board],
+    ...(state.mode === 'hybrid'
+      ? {
+          boardDealt:
+            BOARD_DEALT[state.street === 'ended' ? (live.endedOn ?? 'ended') : state.street],
+        }
+      : {}),
     pots: potsOnShow(state).map((p) => ({
       id: p.id,
       amount: p.amount,
@@ -106,6 +117,7 @@ export function liveHandOf(room: Readonly<RoomRecord>): LiveHand | null {
     shown: hand.shown,
     aggressor: hand.aggressor,
     nextHandAt: room.game!.nextHandAt,
+    endedOn: hand.endedOn,
     undo: last ? { action: last.action, userId: last.userId } : null,
     ...(proposal
       ? {

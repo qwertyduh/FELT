@@ -1,6 +1,7 @@
 import { Link } from 'react-router';
 import { protocolName } from '@felt/protocol';
 import { AuthStatus } from '../components/AuthStatus';
+import { JoinRoom } from '../components/JoinRoom';
 import { useAppStore } from '../store/app';
 
 export function Home() {
@@ -18,6 +19,7 @@ export function Home() {
       >
         Create room
       </Link>
+      <JoinRoom />
       <nav className="mt-6 flex flex-col gap-2 underline">
         <Link to="/onboarding">Onboarding</Link>
         <Link to="/practice">Practice</Link>

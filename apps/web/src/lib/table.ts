@@ -87,13 +87,41 @@ const NEXT_DEAL: Partial<Record<PublicHand['street'], string>> = {
   turn: 'river',
 };
 
+/**
+ * Players the next deal would take: seated, not sitting out, with chips. Approved top-ups are added
+ * before the hand is dealt, so they count.
+ */
+export function readyPlayers(room: PublicRoomState): number {
+  return room.seats.filter(
+    (s) => s && !s.sittingOut && (s.stack > 0 || (room.pendingTopUps[s.userId] ?? 0) > 0),
+  ).length;
+}
+
+/**
+ * Hybrid: the hand has ended and nothing happens until the host starts the next one (the real cards
+ * need gathering first). A game that is ending ends by itself.
+ */
+export const awaitingNextHand = (room: PublicRoomState): boolean =>
+  room.settings.mode === 'hybrid' &&
+  room.status === 'playing' &&
+  !room.paused &&
+  !room.ending &&
+  room.hand?.street === 'ended';
+
 /** One line saying what the table is waiting for. */
 export function turnLine(room: PublicRoomState, userId: string): string {
   const { hand } = room;
   if (room.status === 'ended') return 'This game has ended';
   if (room.paused) return 'Game paused';
   if (!hand) return 'Waiting for the host to start';
-  if (hand.street === 'ended') return 'Hand over';
+  if (hand.street === 'ended') {
+    // The felt already says "Hand over". One line, even at 320px: there is no height to spare.
+    if (!awaitingNextHand(room)) return 'Hand over';
+    if (readyPlayers(room) < 2) return 'Need 2 players for the next hand';
+    return room.hostId === userId
+      ? 'Shuffle, then tap Next hand'
+      : "Waiting for the host's next hand";
+  }
   if (hand.pendingAwards.some((a) => a.disputed)) return 'Award disputed';
   if (hand.pendingAwards.length > 0) return 'Awarding the pot';
   const actor = hand.currentActor === null ? null : room.seats[hand.currentActor];

@@ -17,6 +17,7 @@ import type { PublicRoomState } from '@felt/protocol';
 import { setChatOpen, useRoomStore } from '../lib/realtime/roomStore';
 import type { SocketClient } from '../lib/realtime/socketClient';
 import { satOutByClock } from '../lib/satOut';
+import { readyPlayers } from '../lib/table';
 import {
   buyInRange,
   chips,
@@ -303,10 +304,7 @@ export function WaitingRoom({
     setError(sitFailure(res.error));
   }
 
-  // Approved top-ups are added before the hand is dealt, so they count.
-  const eligible = room.seats.filter(
-    (s) => s && !s.sittingOut && (s.stack > 0 || (room.pendingTopUps[s.userId] ?? 0) > 0),
-  ).length;
+  const eligible = readyPlayers(room);
   // Play stopped for lack of players: only the host can start it again.
   const stopped = room.status === 'playing' && room.hand === null && !room.ending;
   // Not started yet, or stopped.
@@ -431,7 +429,7 @@ export function WaitingRoom({
           </h1>
           {started && <p className="text-sm text-brass tabular-nums">{blinds}</p>}
           {started && room.settings.mode === 'hybrid' && <RoomLog log={room.log} />}
-          <InviteButton code={room.code} />
+          <InviteButton code={room.code} dismissKey={urgentKey} />
           {room.settings.mode === 'online' && !chatting && <ChatPreview userId={userId} />}
         </div>
         {started ? (

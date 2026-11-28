@@ -128,6 +128,8 @@ export const GameSchema = z.strictObject({
       turnLeftMs: z.number().int().min(0).optional(),
       /** Oldest first. Absent or empty: nothing can be undone. */
       undo: z.array(UndoEntrySchema).max(UNDO_DEPTH).optional(),
+      /** Hybrid, once ended: the street it ended on, so how much of the real board was dealt. */
+      endedOn: z.enum(STREETS).optional(),
       /** Online: board cards face up when an all-in run-out began; absent if there was none. */
       runoutFrom: z.union([z.literal(0), z.literal(3), z.literal(4)]).optional(),
       /** Online: who chose to show their cards after the hand ended. */
@@ -136,7 +138,10 @@ export const GameSchema = z.strictObject({
       aggressor: Id.optional(),
     })
     .nullable(),
-  /** Absolute epoch ms at which the next hand is dealt; null when none is scheduled. */
+  /**
+   * Absolute epoch ms at which the next online hand is dealt, or an ending game ends; null when
+   * nothing is scheduled (a hybrid hand waits for the host).
+   */
   nextHandAt: z.number().int().nullable(),
 });
 export type Game = z.infer<typeof GameSchema>;

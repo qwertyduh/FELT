@@ -1,6 +1,6 @@
 /**
  * The community cards of an online hand (P49): five places, filled street by street. Hybrid tables
- * never show it (the real cards are on the real table).
+ * show `HybridBoard` instead (the real cards are on the real table).
  */
 import type { CardString } from '@felt/protocol';
 import { PlayingCard } from './PlayingCard';

@@ -153,6 +153,11 @@ export const PublicHandSchema = z
     options: TurnOptionsSchema.nullable(),
     street: StreetSchema,
     board: z.array(CardSchema).max(5),
+    /**
+     * Hybrid: how many board cards the host has dealt on the real table (`board` holds only those
+     * typed in). Stays after the hand ends. Absent online.
+     */
+    boardDealt: z.union([z.literal(0), z.literal(3), z.literal(4), z.literal(5)]).optional(),
     pots: z.array(PublicPotSchema).max(MAX_SEATS),
     /**
      * This street's bets of players who have since left their seat: part of the pot, but on no

@@ -15,6 +15,10 @@
  * the room. `tick` applies whatever is due; it is safe to call at any moment and any number of
  * times.
  *
+ * Next hand: online deals it by itself at `nextHandAt`. Hybrid never does: the real cards have to
+ * be gathered and shuffled, so the ended hand stays until the host sends `host:start` again. Only a
+ * game that is `ending` schedules anything there (the end itself), see `scheduledDeal`.
+ *
  * Turn clock (P48, turnClock.ts): every new turn gets a full clock. When it runs out (plus a short
  * network grace) the player checks if they can and folds if not; twice in a row sits them out from
  * the next hand.
@@ -111,6 +115,15 @@ const refuse = (room: Readonly<RoomRecord>, code: ErrorCode, message: string): G
 const engineRefusal = (room: Readonly<RoomRecord>, e: EngineError): GameResult =>
   refuse(room, e.code, e.message.slice(0, 300));
 
+/**
+ * When the ended hand is due to make way by itself, or null. In hybrid only for a game that is
+ * ending: a deal time stored by an earlier server is ignored.
+ */
+export function scheduledDeal(room: Readonly<RoomRecord>): number | null {
+  if (room.settings.mode === 'hybrid' && !room.ending) return null;
+  return room.game?.nextHandAt ?? null;
+}
+
 /** The hand still being played (not one that ended and is waiting for the next). */
 export function running(room: Readonly<RoomRecord>): GameHand | null {
   const hand = room.game?.hand;
@@ -131,7 +144,10 @@ function syncStacks(room: Readonly<RoomRecord>, hand: GameHand): RoomRecord['sea
   });
 }
 
-/** The hand is over: write its ledger lines, free seats that were leaving, schedule the next. */
+/**
+ * The hand is over: write its ledger lines, free seats that were leaving and, where the table does
+ * not wait for the host, schedule what comes next.
+ */
 function finishHand(room: Readonly<RoomRecord>, now: number): RoomRecord {
   const game = room.game!;
   const hand = game.hand!;
@@ -156,7 +172,8 @@ function finishHand(room: Readonly<RoomRecord>, now: number): RoomRecord {
     game: {
       ...game,
       hand: { ...hand, proposal: null, undo: [] },
-      nextHandAt: now + nextHandDelay(hand),
+      nextHandAt:
+        room.settings.mode === 'hybrid' && !room.ending ? null : now + nextHandDelay(hand),
     },
   };
   // `vacate`: a player removed by the host is no longer admitted, but is still cashed out.
@@ -254,6 +271,10 @@ function advanceTo(
     state,
     turnSeq: (before.turnSeq ?? 0) + 1,
     ...runout(before.state.board.length, state),
+    // Hybrid: how far the real board had got, which `ended` no longer says.
+    ...(state.mode === 'hybrid' && state.street === 'ended'
+      ? { endedOn: before.state.street }
+      : {}),
   };
   const sameTurn =
     leaver !== undefined &&
@@ -337,7 +358,8 @@ function deal(before: Readonly<RoomRecord>, ctx: GameContext): Result<RoomRecord
  */
 export function nextDeadline(room: Readonly<RoomRecord>): number | null {
   if (room.status !== 'playing' || !room.game) return null;
-  const { hand, nextHandAt } = room.game;
+  const { hand } = room.game;
+  const nextHandAt = scheduledDeal(room);
   if (hand && onTheClock(room, hand)) {
     return hand.turnDeadline === undefined ? 0 : hand.turnDeadline + TURN_GRACE_MS;
   }
@@ -385,7 +407,7 @@ function timeOut(room: Readonly<RoomRecord>, now: number): RoomRecord {
 
 /**
  * Apply the due deadline: run out the turn (or start a missing clock), confirm an undisputed award,
- * or deal the next hand. Whatever is due is read from the room as it is now, so a timer set for an
+ * or deal the next online hand (or end an ending game). Whatever is due is read from the room as it is now, so a timer set for an
  * earlier turn does nothing to a later one.
  */
 export function tick(room: Readonly<RoomRecord>, ctx: GameContext): RoomRecord {
@@ -449,12 +471,28 @@ function current(
   return { hand };
 }
 
-/** `host:start`: the first hand, or a restart after play stopped for lack of players. */
-export function start(room: Readonly<RoomRecord>, userId: string, ctx: GameContext): GameResult {
+/**
+ * `host:start`: the first hand, a restart after play stopped for lack of players or, in hybrid,
+ * the next hand. `afterHandId` names the ended hand on the table: a doubled or late tap cannot
+ * deal past a hand the host has not seen end. If no hand can be dealt nothing changes.
+ */
+export function start(
+  room: Readonly<RoomRecord>,
+  userId: string,
+  ctx: GameContext,
+  afterHandId?: string,
+): GameResult {
   const gated = hostGate(room, userId);
   if (gated) return gated;
-  if (room.ending || running(room) || (room.game?.nextHandAt ?? null) !== null) {
+  const shown = room.game?.hand?.handId;
+  if (afterHandId !== undefined && afterHandId !== shown) {
+    return refuse(room, 'stale_hand', 'that hand is over');
+  }
+  if (room.ending || running(room) || scheduledDeal(room) !== null) {
     return refuse(room, 'illegal_action', 'the game is already running');
+  }
+  if (shown !== undefined && afterHandId === undefined) {
+    return refuse(room, 'stale_hand', 'say which hand has ended');
   }
   const dealt = deal({ ...room, game: room.game ?? NO_GAME }, ctx);
   return dealt.ok ? done(dealt.value) : engineRefusal(room, dealt.error);

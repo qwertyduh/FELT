@@ -98,8 +98,9 @@ Chips exist only for the length of a game. The host sets a minimum buy-in and ap
   - Max seats (2–9, default 9)
   - Turn timer: off / 15 / 30 / 60s (default 30s for online, **off** for hybrid)
   - Blind increase: off / every N minutes (default off), multiplying the blinds by 1.5 or 2 (default 2). The host can change it from the Host menu. New blinds apply from the next hand; the countdown starts with the first hand, stops while paused and restarts when the host sets blinds by hand
+- **Inviting:** right after creating a room the host gets a sheet with the room code and the full invite link, each selectable with its own **Copy** button (the text is selected if copying isn't possible), plus **Share** where the phone has a share sheet. One tap closes it. It opens by itself only once; **Invite** at the table brings it back for anyone.
 - **Join by permission (always on):**
-  1. A player opens the link (`/r/FELT-7KQ2`) or types the code, and sees a room preview (host, mode, blinds, seats taken).
+  1. A player opens the link (`/r/FELT-7KQ2`), or taps **Join a room** on the home page and types the code or pastes the link (any case, with or without `FELT-`), and sees a room preview (host, mode, blinds, seats taken).
   2. They tap **Request to join**.
   3. The host gets a request card (username) and taps **Admit** or **Deny**.
   4. If admitted, the player enters the room and picks a seat. If denied, they see a message and can't request again for 10 minutes.
@@ -130,9 +131,11 @@ Chips exist only for the length of a game. The host sets a minimum buy-in and ap
 
 ### 5.5 Hybrid mode (betting only)
 Physical cards, digital chips, and **every player on their own phone**.
-- The app shows no cards. It tracks the dealer button, blinds, action order, bets, pot(s) and stacks.
+- The app shows no card ranks or suits. It tracks the dealer button, blinds, action order, bets, pot(s) and stacks.
+- **Board:** five blank cards show the street at a glance. All are face down pre-flop; the first three flip together on "Flop dealt", then one each for the turn and river, to a plain face with no rank or suit. They stay as dealt through showdown and the award (a hand ended by folds keeps the rest face down), undo turns them back, and the next hand resets them. There are no hole cards and no hand-rank highlight.
 - Each player acts on their own phone using the same action controls as online mode.
 - **The host advances the streets** ("Flop dealt" → "Turn dealt" → "River dealt"). Entering the actual community cards is optional, for the record only.
+- **Next hand:** hybrid never deals by itself, because the real cards have to be gathered and shuffled. After a hand the host taps **Next hand**; everyone else sees that they are waiting for the host. It needs two players ready. Queued top-ups, sit-outs and any blind increase that is due apply at that tap; removals, leaving and ending the game don't wait for it. (Online deals the next hand automatically.)
 - **Showdown:** the app can't see the cards, so the host taps the winner(s) of each pot, and split pots are supported. Every player sees the proposed award, which auto-confirms after 5 seconds unless someone disputes it.
 - **Undo:** the host can undo the last action, since mis-taps happen at a physical table.
 - **Correct stack:** the host can manually adjust a player's stack to fix real-world mistakes. Every adjustment appears in the room log.

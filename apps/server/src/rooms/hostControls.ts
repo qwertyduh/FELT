@@ -14,7 +14,7 @@ import {
 import { heldAgain } from './absence';
 import { freezeClock, restartClock, thawClock } from './blinds';
 import { beingRemoved, endNow, removeMember } from './ending';
-import { leave, NEXT_HAND_DELAY_MS, nextHandDelay, running } from './game';
+import { leave, NEXT_HAND_DELAY_MS, nextHandDelay, running, scheduledDeal } from './game';
 import type { RoomRecord } from './roomStore';
 import { freezeTurn, syncClock, thawTurn } from './turnClock';
 import type { SeatResult } from './seating';
@@ -86,7 +86,7 @@ export function resume(room: Readonly<RoomRecord>, userId: string, now: number):
     game: {
       ...game,
       nextHandAt:
-        game.nextHandAt === null
+        scheduledDeal(room) === null
           ? null
           : now + (game.hand ? nextHandDelay(game.hand) : NEXT_HAND_DELAY_MS),
       hand:

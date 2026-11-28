@@ -146,7 +146,11 @@ export const clientEventSchemas = {
   'player:topup_request': z.object({ amount: PositiveChipsSchema }).strict(),
   'host:admit': z.object({ requestId, approve: z.boolean() }).strict(),
   'host:topup': z.object({ requestId, approve: z.boolean() }).strict(),
-  'host:start': NoPayload,
+  /**
+   * The first hand, a restart, or (hybrid) the next hand. `afterHandId` is the ended hand on the
+   * table, required when there is one, so a doubled or late tap cannot deal twice.
+   */
+  'host:start': z.object({ afterHandId: handId }).strict().optional(),
   'host:pause': NoPayload,
   'host:resume': NoPayload,
   'host:end': NoPayload,

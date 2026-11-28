@@ -5,6 +5,8 @@
  * winners and the proposed award open as sheets laid over what is above (`data-cover`), so the
  * request cards never move; they take no taps while covered.
  *
+ * Between hybrid hands the host has Next hand in the same place as the deals.
+ *
  * In hybrid the host's bar has one more line, always there, with Undo and Fix stack (P42). While
  * the game is paused (P44) nothing can be done here; the host's button row holds Resume. With the
  * turn timer off, the host's button row offers to fold a disconnected player on turn (P45), behind
@@ -40,7 +42,7 @@ import { DEALS, hostStep } from '../lib/hybrid';
 import { useRoomStore } from '../lib/realtime/roomStore';
 import type { AckResult, SocketClient } from '../lib/realtime/socketClient';
 import { chips, shortChips } from '../lib/seating';
-import { absentActor, potTotal, toCall } from '../lib/table';
+import { absentActor, awaitingNextHand, potTotal, readyPlayers, toCall } from '../lib/table';
 import { turnTimer, type TurnTimer } from '../lib/turnClock';
 import { usePressGuard } from '../lib/usePressGuard';
 import { useStillCards } from '../lib/useStillCards';
@@ -54,11 +56,38 @@ import { UndoSheet } from './hybrid/UndoSheet';
 import { TurnRing } from './TurnRing';
 
 export const ACTION_ARM_MS = 400;
+/**
+ * Next hand takes the place of the award banner's button the moment the pot is paid, and a deal
+ * cannot be undone: it waits longer before it takes a tap.
+ */
+export const NEXT_HAND_ARM_MS = 1_500;
 export const ACTION_NOTICE_MS = 4_000;
 
 const money = (n: number) => shortChips(n, 100_000_000);
 const TOOL =
   'min-h-11 w-18 shrink-0 rounded-xl border border-felt-700 text-sm font-semibold text-brass active:brightness-90 disabled:text-cream/30';
+
+/** Hybrid: the host deals the next hand once the real cards have been gathered and shuffled. */
+function NextHand({ disabled, onDeal }: { disabled: boolean; onDeal: () => void }) {
+  const { list, held, isStill } = useStillCards<HTMLDivElement>(true, NEXT_HAND_ARM_MS);
+  const guard = usePressGuard();
+  return (
+    <div ref={list} className="grid">
+      <button
+        type="button"
+        data-card="next-hand"
+        className={SOLID}
+        disabled={disabled || held.has('next-hand')}
+        onPointerDown={() => guard.press(isStill('next-hand') ? 'next-hand' : null)}
+        onClick={(e) => {
+          if (guard.took('next-hand', e) && isStill('next-hand')) onDeal();
+        }}
+      >
+        Next hand
+      </button>
+    </div>
+  );
+}
 
 type SheetKind = 'size' | 'cards' | 'award' | 'undo' | 'adjust' | 'absent';
 
@@ -212,6 +241,7 @@ export function ActionBar({
       : null;
   const hosting = room.hostId === userId;
   const step = hosting ? hostStep(room) : null;
+  const next = hosting && awaitingNextHand(room) && readyPlayers(room) >= 2;
   const proposed = live && hand && hand.street !== 'ended' && hand.pendingAwards.length > 0;
   const turnKey = hand ? `${hand.handId}:${hand.turnSeq}` : '';
   const owed = me ? toCall(hand, me) : null;
@@ -526,6 +556,16 @@ export function ActionBar({
           ready={ready}
           onBack={close}
           onSend={act}
+        />
+      )}
+      {next && hand && (
+        <NextHand
+          key={hand.handId}
+          disabled={off}
+          onDeal={() => {
+            const payload = { afterHandId: hand.handId };
+            void send('host:start', () => client.emitWithAck('host:start', payload));
+          }}
         />
       )}
       {deal && step?.kind === 'deal' && opened !== 'cards' && (

@@ -52,6 +52,7 @@ export function actFailure({ code }: ErrorPayload, event: ClientEventName = 'gam
   if (event === 'hand:show' && ['stale_hand', 'no_hand', 'hand_ended'].includes(code)) {
     return 'Too late to show.';
   }
+  if (event === 'host:start' && code === 'not_enough_players') return '2 players must be ready.';
   // Most likely they are back (or the game's timer is on).
   if (event === 'host:force_fold' && code === 'illegal_action') return 'Not folded. Check table.';
   switch (code as string) {

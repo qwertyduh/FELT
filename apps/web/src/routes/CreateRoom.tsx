@@ -18,6 +18,7 @@ import {
   type GameMode,
   type RoomForm,
 } from '../lib/createRoom';
+import { markCreated } from '../lib/justCreated';
 
 const MODES: { value: GameMode; title: string; text: string }[] = [
   { value: 'online', title: 'Online', text: 'The app deals the cards.' },
@@ -177,7 +178,10 @@ export function CreateRoom() {
       if (!parsed.success) throw parsed.error;
       const { code } = parsed.data;
       // If the host already walked away from this screen, don't yank them into the room.
-      if (mounted.current) void navigate(`/r/${code}`);
+      if (mounted.current) {
+        markCreated(code);
+        void navigate(`/r/${code}`);
+      }
     } catch (err) {
       if (!mounted.current) return;
       setServerError(createRoomErrorMessage(err));

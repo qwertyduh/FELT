@@ -451,6 +451,9 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 ## Stage E review (2026-11-28)
 - _Opus review of Stage E and the Stage D fixes: GO for a game night; no chip error, card leak, admission bypass or RoomActor break. Not fixed: (1) rolling the server back with live rooms makes them unreadable (strict record schema; see DEPLOY.md, and consider a tolerant loader); (2) one throwing commit hook would skip the broadcast and timers (no trigger found); (3) TRUST_PROXY trusts every hop, so the public recap rate limit can be dodged; (4) the chat filter censors only the first of run-together words. Suggested next: tolerant loader, removed players seeing their last hand, a deadline on a pending end in hybrid._
 
+## Owner feedback from the live app (2026-11-28)
+- _Done (GO): Join a room on the home page; hybrid hands start only when the host taps Next hand (online still auto-deals); hybrid shows five plain cards that flip by street; invite sheet with code and link after creating a room. Protocol 8: web and server deploy together; rolling back with a finished hybrid hand makes that room unreadable. Open: at 320x568 with a request card the hybrid table scrolls your own seat out of view; the blind countdown runs while waiting for Next hand._
+
 ---
 
 ## Stage F — Practice mode (client-side)

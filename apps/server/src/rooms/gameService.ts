@@ -127,7 +127,12 @@ export class GameService {
   }
 
   readonly register: SocketRegistrar = (socket, log) => {
-    onClientEvent(socket, 'host:start', () => this.intent(socket, start), log);
+    onClientEvent(
+      socket,
+      'host:start',
+      (p) => this.intent(socket, (room, userId, ctx) => start(room, userId, ctx, p?.afterHandId)),
+      log,
+    );
     onClientEvent(
       socket,
       'game:act',
