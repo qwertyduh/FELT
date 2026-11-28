@@ -250,16 +250,28 @@ function setBlinds(
 }
 
 /**
- * `host:end`. With no hand being played the game ends at once. Otherwise the hand is played to its
- * end and nobody is refunded: no further hand is dealt and the game ends once the result has been
- * on the table for the usual pause (`tick` in game.ts). So that this cannot be held open, a paused
- * game resumes and cannot be paused again, and with the timer off every turn is clocked from now;
- * top-ups and new blinds, which only a next hand could use, are dropped now.
+ * An online all-in run-out still on the table: the hand has ended for the server, but clients are
+ * dealing the board out and hold the result back until about the next deal (while paused that
+ * deadline stands still). Reads only what `room:state` already says.
+ */
+function runoutOnShow(room: Readonly<RoomRecord>, now: number): boolean {
+  const game = room.game;
+  if (!game?.hand || game.hand.runoutFrom === undefined || game.nextHandAt === null) return false;
+  return room.status === 'paused' || now < game.nextHandAt;
+}
+
+/**
+ * `host:end`. With no hand being played, and no run-out on the table, the game ends at once.
+ * Otherwise the hand is played to its end and nobody is refunded: no further hand is dealt and the
+ * game ends once the result has been on the table for the usual pause (`tick` in game.ts). So that
+ * this cannot be held open, a paused game resumes and cannot be paused again, and with the timer
+ * off every turn is clocked from now; top-ups and new blinds, which only a next hand could use, are
+ * dropped now. Asking again never cuts a hand or a run-out short.
  */
 export function end(room: Readonly<RoomRecord>, userId: string, now: number): SeatResult {
   const gated = gate(room, userId);
   if (gated) return gated;
-  if (!running(room)) return done(endNow(room, now));
+  if (!running(room) && !runoutOnShow(room, now)) return done(endNow(room, now));
   if (room.ending) return done(room);
   const going = room.status === 'paused' ? resume(room, userId, now).room : (room as RoomRecord);
   const { nextBlinds, blindClock, ...rest } = going;
