@@ -79,7 +79,7 @@ felt/
 │           ├── socket/       # io setup, auth middleware, handlers
 │           ├── rooms/        # RoomActor, RoomRegistry, persistence
 │           ├── usernames/    # format, reserved list, profanity check
-│           └── recap/        # recap builder + settle-up
+│           └── recap/        # recap builder, wire forms and REST (settle-up is in the engine)
 ├── packages/
 │   ├── engine/               # PURE poker logic: no I/O, no timers, no randomness source of its own
 │   ├── bots/                 # PURE bot strategies + hint/explanation templates
@@ -198,7 +198,7 @@ profiles (
 -- One row per player (anonymous user) once they claim a username.
 
 shared_recaps (
-  id          text primary key,          -- short public slug
+  id          text primary key,          -- public slug, 128 random bits
   room_code   text not null,
   payload     jsonb not null,            -- frozen recap
   created_by  uuid references auth.users,
@@ -208,7 +208,7 @@ shared_recaps (
 
 RLS:
 - `profiles`: select for authenticated users; **no** insert/update policies (writes go through the server's service role).
-- `shared_recaps`: select by slug for anyone, while not expired. Writes go through the service role only.
+- `shared_recaps`: no policies and no anon/authenticated privileges (a "not expired" select policy would let anyone list every recap). The server reads and writes it with the service role; the public reads by slug through `GET /recaps/:slug`, which treats expired rows as missing.
 
 ---
 
@@ -225,8 +225,8 @@ All routes require a Supabase JWT unless noted otherwise.
 | `POST` | `/me/username` | Claim username → `201` / `409 username_taken` / `422 { reason }` |
 | `POST` | `/rooms` | Create room → `{ code, url }` (guests allowed) |
 | `GET` | `/rooms/:code` | Preview: mode, host name, blinds, buy-in range, seats taken, status |
-| `POST` | `/recaps` | Freeze a finished session's recap → `{ slug }` (host only) |
-| `GET` | `/recaps/:slug` | Public recap (no auth) |
+| `POST` | `/recaps` | `{ code, rate: { chips, minorUnits } \| null }`. Freeze an ended room's recap, built from the server's record → `201 { slug, expiresAt }` (host only; 5/min; `403 not_host`, `404 room_not_found`, `409 room_not_ended` / `nothing_to_share`, `422 rate_too_large`) |
+| `GET` | `/recaps/:slug` | `{ recap, expiresAt }`: usernames and numbers only (no auth; 60/min per IP; unknown and expired are the same `404`) |
 
 Everything in-game happens over Socket.io. Practice mode uses no API at all.
 
@@ -292,7 +292,7 @@ Web and server deploy separately and open tabs keep old bundles.
 | `hand:result` | Pots, winners, revealed hands | Room |
 | `turn:start` | `{ userId, deadline }` (`deadline` null with the timer off). Sent on each new turn and on resume; `room:state.hand.turnDeadline` is the same value (null while paused) and is what a reconnecting client uses | Room |
 | `chat:message` / `chat:reaction` | Message | Room |
-| `session:recap` | Recap + settle-up | Room |
+| `session:recap` | `{ code, hostId, endedAt, players }` (chips; settle-up is computed from them with the engine's `settleUp`). Sent when the room becomes ended, and to an admitted player who enters the ended room (before the `room_ended` ack) | Room / one socket |
 | `error` | `{ code, message }` | One socket |
 
 **Socket rooms:** a socket joins the Socket.io room `room:{code}` only after it has been admitted. Requesters get only their own pending/decision events and never see room state.

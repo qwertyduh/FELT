@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Ack, ClientEventPayload, RoomCode, ServerEventPayload } from '@felt/protocol';
 import type { Db } from '../db/supabase';
+import { sessionRecap } from '../recap/sessionRecap';
 import { findUsername } from '../usernames/claim';
 import type { Realtime, Timers } from '../realtime';
 import {
@@ -370,7 +371,12 @@ export class JoinService {
       if (out.kicked) socket.emit('room:kicked', { code });
       return errorAck('not_admitted', 'the host has not admitted you');
     }
-    if (out.ended) return errorAck('room_ended', 'room has ended');
+    if (out.ended) {
+      // A member coming back (reload, reconnect) still gets the results while the room exists.
+      // Sent to this socket alone: it enters no channel.
+      socket.emit('session:recap', sessionRecap(room));
+      return errorAck('room_ended', 'room has ended');
+    }
     if (socket.data.enterSeq !== seq) return errorAck('forbidden', 'superseded by a newer request');
     if (out.moved) return errorAck('session_moved', 'this room is open on another device');
     if (!socket.connected) {

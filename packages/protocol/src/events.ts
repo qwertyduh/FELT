@@ -20,6 +20,7 @@ import {
   RoomCodeSchema,
   SeatHoldMinutesSchema,
 } from './rooms';
+import { RecapSchema } from './recaps';
 import { PublicRoomStateSchema } from './state';
 
 const NoPayload = z.undefined();
@@ -285,24 +286,6 @@ export const HandResultPayloadSchema = z
   })
   .strict();
 
-export const RecapPlayerSchema = z
-  .object({
-    userId: UserIdSchema,
-    username: z.string().min(1).max(20),
-    boughtIn: ChipsSchema,
-    finalStack: ChipsSchema,
-    net: z.number().int(),
-    handsPlayed: z.number().int().min(0),
-    handsWon: z.number().int().min(0),
-    biggestPotWon: ChipsSchema,
-  })
-  .strict();
-
-export const RecapSchema = z
-  .object({ endedAt: EpochMsSchema, players: z.array(RecapPlayerSchema).max(MAX_SEATS) })
-  .strict();
-export type Recap = z.infer<typeof RecapSchema>;
-
 const JoinRequestSchema = z
   .object({ requestId, userId: UserIdSchema, username: z.string().min(1).max(20) })
   .strict();
@@ -408,6 +391,10 @@ export const serverEventSchemas = {
     })
     .strict(),
   'chat:reaction': z.object({ userId: UserIdSchema, emoji: z.enum(REACTION_EMOJIS) }).strict(),
+  /**
+   * To the admitted players when the game ends, and to one of them who enters the ended room
+   * later (just before the `room_ended` ack).
+   */
   'session:recap': RecapSchema,
   error: ErrorPayloadSchema,
 } as const;

@@ -1,8 +1,10 @@
 import { create } from 'zustand';
 import {
   PublicRoomStateSchema,
+  RecapSchema,
   parseTolerant,
   type PublicRoomState,
+  type Recap,
   type ServerToClientEvents,
 } from '@felt/protocol';
 import { clearUpgrade, requireReload } from './upgradeStore';
@@ -24,6 +26,8 @@ export interface RoomStoreState {
   needsResync: boolean;
   /** Count of dropped invalid payloads (never logs the payload itself). */
   invalidDropped: number;
+  /** The ended game's results (`session:recap`). */
+  recap: Recap | null;
   /** Own hole cards for the current hand only. */
   privateHand: PrivateHand | null;
   /** Everyone seen on a seat in this room: a cashed-out player can still be in a hand's result. */
@@ -51,6 +55,7 @@ export const initialRoomState: RoomStoreState = {
   error: null,
   needsResync: false,
   invalidDropped: 0,
+  recap: null,
   privateHand: null,
   names: {},
   releasedHandId: null,
@@ -102,6 +107,16 @@ export function applyRoomState(next: unknown): boolean {
         : null,
   });
   return true;
+}
+
+export function applyRecap(next: unknown): void {
+  const parsed = parseTolerant(RecapSchema, next);
+  if (!parsed.success) {
+    useRoomStore.setState((s) => ({ invalidDropped: s.invalidDropped + 1 }));
+    requireReload('payload');
+    return;
+  }
+  useRoomStore.setState({ recap: parsed.data });
 }
 
 /** `hand:private` replaces the previous hand's cards; a new hand id clears the old ones. */

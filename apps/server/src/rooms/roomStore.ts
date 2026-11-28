@@ -40,6 +40,8 @@ export const RoomRecordSchema = z
     /** Snapshot taken at creation; the preview never needs a DB hit. */
     hostUsername: z.string().min(1).max(20),
     createdAt: z.number().int(),
+    /** When the game ended (ending.ts). Absent before that, and on rooms ended before P54. */
+    endedAt: z.number().int().optional(),
     admitted: z.array(UserId),
     requests: z.array(
       z

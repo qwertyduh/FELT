@@ -9,3 +9,4 @@ export * from './street';
 export * from './pots';
 export * from './showdown';
 export * from './award';
+export * from './settle-up';

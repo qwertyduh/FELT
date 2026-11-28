@@ -3,6 +3,7 @@ import { Navigate, useLocation } from 'react-router';
 import { restartAuth } from '../lib/auth';
 import { useAuthStore } from '../lib/authStore';
 import { loadMe, useMeStore } from '../lib/meStore';
+import { isPublicPath } from '../lib/recap';
 import { returnToFrom } from '../lib/returnTo';
 
 function Splash({ children, busy = false }: { children: ReactNode; busy?: boolean }) {
@@ -37,6 +38,9 @@ export function RouteGuard({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (authStatus === 'signedIn' && userId && stale) void loadMe(userId);
   }, [authStatus, userId, stale]);
+
+  // A shared recap is for anyone with the link: no sign-in, no username.
+  if (isPublicPath(pathname)) return <>{children}</>;
 
   if (authStatus === 'error') {
     return (

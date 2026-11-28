@@ -12,6 +12,7 @@ import {
 import { ActionBar } from '../components/ActionBar';
 import { HostInbox } from '../components/HostInbox';
 import { HostMenu } from '../components/HostMenu';
+import { RoomRecap } from '../components/recap/RoomRecap';
 import { TopUpToast } from '../components/TopUpToast';
 import { WaitingRoom } from '../components/WaitingRoom';
 import { apiFetch } from '../lib/api';
@@ -265,12 +266,10 @@ function EnteredScreen({
   const room = useRoomStore((s) => s.room);
   const mine = room?.seats.find((s) => s?.userId === userId) ?? null;
   if (room?.status === 'ended') {
-    // The session recap (P52-P54) takes this screen over.
+    // `session:recap` comes just before this state, and takes the screen over (`Body`).
     return (
       <div data-testid="entered-room" className="flex flex-1 flex-col">
-        <Screen title="This game has ended" actions={<HomeLink />}>
-          <Note>Thanks for playing. A session recap isn&apos;t available yet.</Note>
-        </Screen>
+        <Screen title="This game has ended" actions={<HomeLink />} />
       </div>
     );
   }
@@ -316,7 +315,12 @@ function Body({
   const { phase, preview, previewError, connected, problem } = state;
   const authFailed = useConnectionStore((s) => s.status === 'error');
   const host = preview?.hostUsername ?? 'the host';
+  const recap = useRoomStore((s) => s.recap);
 
+  // Only ever sent to a member of an ended room. It stays up if the room closes meanwhile.
+  if (recap && ['entered', 'ended', 'missing', 'entering', 'loading'].includes(phase.name)) {
+    return <RoomRecap recap={recap} userId={userId} />;
+  }
   if (phase.name === 'missing') return <MissingRoom />;
   if (phase.name === 'ended' || (phase.name === 'preview' && preview?.status === 'ended')) {
     return (

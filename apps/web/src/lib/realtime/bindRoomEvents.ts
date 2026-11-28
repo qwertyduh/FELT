@@ -5,6 +5,7 @@ import {
   applyHostInbox,
   applyHostMembers,
   applyPrivateHand,
+  applyRecap,
   applyRoomState,
   applyTopUpDecision,
   applyTopUpStatus,
@@ -24,6 +25,7 @@ export function bindRoomEvents(socket: Listenable): () => void {
     firstConnect = false;
   };
   socket.on('room:state', onState);
+  socket.on('session:recap', applyRecap);
   socket.on('hand:private', onHand as never);
   socket.on('host:inbox', applyHostInbox);
   socket.on('host:members', applyHostMembers);
@@ -34,6 +36,7 @@ export function bindRoomEvents(socket: Listenable): () => void {
   socket.on('connect', onConnect);
   return () => {
     socket.off('room:state', onState);
+    socket.off('session:recap', applyRecap);
     socket.off('hand:private', onHand as never);
     socket.off('host:inbox', applyHostInbox);
     socket.off('host:members', applyHostMembers);

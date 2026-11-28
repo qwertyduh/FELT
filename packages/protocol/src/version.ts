@@ -15,6 +15,7 @@ export const WIRE_FINGERPRINTS = [
   '8fcdfffe',
   'c7097c27',
   'f0dc5b9d',
+  '21ec94e3',
 ] as const;
 
 export const PROTOCOL_VERSION: number = WIRE_FINGERPRINTS.length;

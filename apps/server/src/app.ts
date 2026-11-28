@@ -17,6 +17,7 @@ import { createDbFromEnv, type Db } from './db/supabase';
 import { registerUsernameRoutes } from './usernames/routes';
 import { attachRealtime, type Timers } from './realtime';
 import { registerRoomRoutes } from './rooms/routes';
+import { registerRecapRoutes } from './recap/routes';
 import type { RoomRedis } from './rooms/redis';
 import type { RandomInt } from './rooms/code';
 import { RoomStore, type RoomRecord } from './rooms/roomStore';
@@ -309,6 +310,11 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
   }
   registerMe(app, db);
   await registerUsernameRoutes(app, db);
+  registerRecapRoutes(app, {
+    db,
+    registry: roomRegistry,
+    ...(deps.roomTimers ? { now: () => deps.roomTimers!.now() } : {}),
+  });
   registerRoomRoutes(app, {
     db,
     redis: deps.redis,

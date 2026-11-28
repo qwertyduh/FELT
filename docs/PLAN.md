@@ -418,20 +418,23 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 
 ## Stage E — Recap, chat, hand ranks
 
-### ⬜ P52 · Recap builder
+### ✅ P52 · Recap builder
 - **Needs:** P31
 - **Do:** A pure `buildRecap(ledger, seats)` producing per-player buy-in total, final stack, net, hands played/won and biggest pot.
 - **Done when:** tests show net totals summing to 0 and top-ups counted.
+- _Note: GO on round 2 (round 1: tests were stale after the end-game change). Pure code in apps/server/src/recap. Biggest pot is the most one player was paid in a hand. With host stack adjustments nets need not sum to zero._
 
-### ⬜ P53 · Settle-up algorithm
+### ✅ P53 · Settle-up algorithm
 - **Needs:** P52
 - **Do:** A pure min-transfers "who pays whom" from nets, plus a chips→money conversion at a given rate.
 - **Done when:** tests cover 2, 5 and 9 players, a zero-net player and rounding.
+- _Note: GO with P52. Fewest transfers when amounts sum to zero (up to 16 players); otherwise who is left short follows from matching order._
 
-### ⬜ P54 · Recap screen & share link
+### ✅ P54 · Recap screen & share link
 - **Needs:** P53, P44
 - **Do:** A `session:recap` event on end game, the recap UI with a rate input, a `shared_recaps` migration, `POST/GET /recaps`, a pg_cron purge and `/recap/:slug`.
 - **Done when:** Playwright ends a game, shares the recap and opens the link logged-out.
+- _Note: GO. session:recap, recap screen, POST/GET /recaps, /recap/:slug. The table has no select policy (reads go through the server only), unlike the original design. Apply migration 20261128000000 to production before deploying the server; web and server deploy together. Owner to confirm: only the host's rate goes into the link; no image export (PRD mentions one); no way to revoke a link. Open: ending the game during a run-out shows the recap early (being fixed)._
 
 ### ⬜ P55 · Chat & reactions
 - **Needs:** P32, P08

@@ -54,6 +54,7 @@ export function endNow(room: Readonly<RoomRecord>, now: number): RoomRecord {
   return {
     ...rest,
     status: 'ended',
+    endedAt: now,
     requests: [],
     topUpRequests: [],
     pendingTopUps: [],

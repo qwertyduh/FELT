@@ -7,6 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Ack, RoomCode } from '@felt/protocol';
 import type { Realtime, Timers } from '../realtime';
+import { sessionRecap } from '../recap/sessionRecap';
 import { joinWaitChannel, memberChannel, outOfRoom, roomChannel } from '../realtime/channels';
 import {
   errorAck,
@@ -132,6 +133,8 @@ export class HostService {
       if (!room.admitted.includes(userId)) this.remove(code, userId);
     }
     if (room.status === 'ended' && before.status !== 'ended') {
+      // Only admitted players are in the channel; anyone just removed has been taken out above.
+      this.io.to(roomChannel(code)).emit('session:recap', sessionRecap(room));
       for (const { userId, kind } of before.requests) {
         if (kind !== 'join') continue;
         const waiting = joinWaitChannel(code, userId);
