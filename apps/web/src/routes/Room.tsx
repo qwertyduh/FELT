@@ -10,6 +10,7 @@ import {
   type RoomPreview,
 } from '@felt/protocol';
 import { ActionBar } from '../components/ActionBar';
+import { HeaderSlotProvider } from '../components/hand-ranks/headerSlot';
 import { HostInbox } from '../components/HostInbox';
 import { HostMenu } from '../components/HostMenu';
 import { RoomRecap } from '../components/recap/RoomRecap';
@@ -479,27 +480,33 @@ function Frame({
   action?: ReactNode;
   children: ReactNode;
 }) {
+  /** Where the table puts its hand-rank button. */
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
   return (
     <section
       className="flex flex-1 flex-col"
       style={{ animation: 'felt-rise 380ms cubic-bezier(0.2, 0.7, 0.2, 1) both' }}
     >
-      <header className="flex items-center justify-between gap-3">
-        <Link to="/" className="inline-flex min-h-11 items-center text-base text-brass">
-          <span aria-hidden="true" className="mr-2">
+      {/* Under 375px "Home" is its arrow alone, so that everything fits on one row. */}
+      <header className="flex items-center justify-between gap-2 min-[375px]:gap-3">
+        <Link to="/" className="inline-flex min-h-11 min-w-11 items-center text-base text-brass">
+          <span aria-hidden="true" className="min-[375px]:mr-2">
             ←
           </span>
-          Home
+          <span className="max-[374px]:sr-only">Home</span>
         </Link>
         {action}
-        <p
-          data-testid="room-code"
-          className="min-w-0 truncate font-display text-lg tracking-widest text-brass"
-        >
-          {code}
-        </p>
+        <div className="flex min-w-0 items-center gap-1 min-[360px]:gap-2">
+          <span ref={setSlot} className="shrink-0 empty:hidden" />
+          <p
+            data-testid="room-code"
+            className="min-w-0 truncate font-display text-base text-brass min-[360px]:tracking-wider min-[375px]:text-lg min-[375px]:tracking-widest"
+          >
+            {code}
+          </p>
+        </div>
       </header>
-      {children}
+      <HeaderSlotProvider value={slot}>{children}</HeaderSlotProvider>
     </section>
   );
 }

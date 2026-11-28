@@ -5,6 +5,8 @@
  * below). Nothing is sent before `ready`, and every send waits for its ack; the seats themselves
  * only ever change through `room:state`.
  *
+ * The hand-rank button is rendered from here, which knows what the table shows, into the header.
+ *
  * Renders two siblings: a top part that gives up height (and scrolls) when the request cards are
  * up, and a footer that stays whole, so Start and the buy-in panel are never pushed out of view.
  */
@@ -26,6 +28,8 @@ import { useShownRoom } from '../lib/useShownRoom';
 import { useStillCards } from '../lib/useStillCards';
 import { useTurnSignal } from '../lib/useTurnSignal';
 import { BuyMore } from './BuyMore';
+import { InHeader } from './hand-ranks/headerSlot';
+import { TableHandRanks } from './hand-ranks/TableHandRanks';
 import { RoomLog } from './hybrid/RoomLog';
 import { InviteButton } from './InviteButton';
 import { ResultBanner } from './ResultBanner';
@@ -387,6 +391,12 @@ export function WaitingRoom({
 
   return (
     <>
+      {room.status !== 'ended' && (
+        <InHeader>
+          {/* The room as shown: a run-out must not be given away. */}
+          <TableHandRanks room={shown} userId={userId} ready={ready} />
+        </InHeader>
+      )}
       <div className={`flex flex-1 flex-col gap-2 ${ABOVE_REQUESTS}`}>
         {result && <ResultBanner room={shown} userId={userId} held={held} />}
         <div

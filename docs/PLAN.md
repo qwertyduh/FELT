@@ -441,10 +441,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Do:** Server `chat:send` (censor, 200-char cap, token bucket), `chat:react` (allow-list) and `host:mute`. UI: a chat panel (collapsed by default in hybrid) and reaction bubbles at seats.
 - **Done when:** tests for the rate limit, censoring and muting; a Playwright smoke test.
 
-### ⬜ P56 · Hand rankings button & sheet
+### ✅ P56 · Hand rankings button & sheet
 - **Needs:** P39, P17
 - **Do:** A floating button on every table screen that never overlaps the action bar. A bottom sheet lists the 10 ranks best→worst with example cards and highlights the player's current best hand when cards are known.
 - **Done when:** screenshots open and closed at 375px; a highlight test with known hole + board cards.
+- _Note: GO on round 2 (round 1: the table button pushed two 320-375px layouts into scrolling). The button sits in the room header rather than floating (PRD says floating), so it costs no card space; under 375px, Home shows as an arrow. Open: swipe untested on a real phone; at 320px a very wide name can cut the sheet's turn line._
 
 ---
 
