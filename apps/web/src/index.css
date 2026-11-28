@@ -10,6 +10,13 @@
   --color-brass-dim: #9c8140;
   --color-chip-red: #f08a7c;
   --color-chip-green: #9be0b0;
+  /* Playing cards: a four-colour deck, each dark enough to read on the card face. */
+  --color-card: #fcfbf7;
+  --color-suit-spade: #17171a;
+  --color-suit-heart: #c8102e;
+  --color-suit-diamond: #1257c9;
+  --color-suit-club: #0d7a34;
+  --color-chip-back: #7d2f2a;
   --font-display: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
 }
 

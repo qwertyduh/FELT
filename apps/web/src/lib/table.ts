@@ -101,6 +101,8 @@ export function turnLine(room: PublicRoomState, userId: string): string {
     if (actor.userId === userId) return 'Your turn';
     return actor.connected ? `${actor.username}'s turn` : `${actor.username} is away`;
   }
+  // Online the server deals by itself: there is no host step to wait for.
+  if (room.settings.mode === 'online') return 'Dealing…';
   const hosting = room.hostId === userId;
   if (hand.street === 'showdown') {
     return hosting ? 'Pick the winners' : 'Waiting for the host to pick the winner';

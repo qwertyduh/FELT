@@ -9,7 +9,6 @@
  * up, and a footer that stays whole, so Start and the buy-in panel are never pushed out of view.
  */
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link } from 'react-router';
 import type { PublicRoomState } from '@felt/protocol';
 import type { SocketClient } from '../lib/realtime/socketClient';
 import {
@@ -22,7 +21,9 @@ import {
   type Returning,
 } from '../lib/seating';
 import { usePressGuard } from '../lib/usePressGuard';
+import { useShownRoom } from '../lib/useShownRoom';
 import { useStillCards } from '../lib/useStillCards';
+import { useTurnSignal } from '../lib/useTurnSignal';
 import { BuyMore } from './BuyMore';
 import { RoomLog } from './hybrid/RoomLog';
 import { InviteButton } from './InviteButton';
@@ -207,6 +208,9 @@ export function WaitingRoom({
   const [returning, setReturning] = useState<Returning | null>(null);
   const [busy, setBusy] = useState(false);
   const sending = useRef(false);
+  useTurnSignal(room, userId);
+  // What the table says: an all-in result is held back for a moment.
+  const { room: shown, held } = useShownRoom(room);
 
   const hosting = room.hostId === userId;
   const mine = room.seats.find((s) => s?.userId === userId) ?? null;
@@ -265,7 +269,6 @@ export function WaitingRoom({
     setError(sitFailure(res.error));
   }
 
-  const online = room.settings.mode === 'online';
   // Approved top-ups are added before the hand is dealt, so they count.
   const eligible = room.seats.filter(
     (s) => s && !s.sittingOut && (s.stack > 0 || (room.pendingTopUps[s.userId] ?? 0) > 0),
@@ -277,18 +280,6 @@ export function WaitingRoom({
 
   function status() {
     if (room.status === 'ended') return <Hint>This game has ended.</Hint>;
-    if (online && hosting) {
-      return (
-        <p className="text-center text-base text-cream">
-          Online games can&apos;t start yet: the app can&apos;t deal cards so far.{' '}
-          <Link to="/new" className="text-brass underline">
-            Create a hybrid room
-          </Link>{' '}
-          to play with real cards.
-        </p>
-      );
-    }
-    if (online) return <Hint>Online games can&apos;t start yet.</Hint>;
     if (hosting && startable) {
       return eligible >= 2 ? (
         <StartButton ready={ready} client={client} />
@@ -317,14 +308,15 @@ export function WaitingRoom({
       )}
     </span>
   );
-  const seats = { room, userId, selected, onPick: canSit ? pick : null };
+  const shownMine = shown.seats.find((s) => s?.userId === userId) ?? null;
+  const seats = { room: shown, userId, selected, onPick: canSit ? pick : null };
   const seatControls = (place: 'table' | 'map') =>
     mine &&
     room.status !== 'ended' && (
       <SeatControls room={room} me={mine} ready={ready} client={client} place={place} />
     );
   const buyMore = mine && room.status !== 'ended' && (
-    <BuyMore room={room} me={mine} ready={ready} client={client} compact={started} />
+    <BuyMore room={shown} me={shownMine!} ready={ready} client={client} compact={started} />
   );
 
   return (
@@ -343,7 +335,7 @@ export function WaitingRoom({
           <InviteButton code={room.code} />
         </div>
         {started ? (
-          <Table {...seats} controls={seatControls('table')} />
+          <Table {...seats} held={held} ready={ready} controls={seatControls('table')} />
         ) : (
           <>
             <p className="flex flex-wrap justify-between gap-x-3 text-sm text-brass tabular-nums">
@@ -357,7 +349,7 @@ export function WaitingRoom({
 
       {/* In the lobby a steady height, so what is around it moves as little as possible. */}
       <div className={`flex shrink-0 flex-col justify-end gap-2 pt-2 ${started ? '' : 'min-h-18'}`}>
-        {started && <TableSummary room={room} userId={userId} action={buyMore} />}
+        {started && <TableSummary room={shown} userId={userId} ready={ready} action={buyMore} />}
         {notice && <Problem>{notice}</Problem>}
         {selected !== null && canSit ? (
           <BuyInForm

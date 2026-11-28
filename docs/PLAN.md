@@ -385,10 +385,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** fake-timer tests cover each case, including a restart mid-turn.
 - _Note: GO. Turn clock in rooms/turnClock.ts; expiry is a queued actor task; works in hybrid when the host sets a timer; wire format unchanged. Owner to confirm: a deadline that passed while the server was down applies as soon as anyone reconnects and counts as a strike (the player may not be back yet); resume gives at least 5s, so a pausing host can stretch their own clock; strikes carry across hands. Open: undoing a timeout also lifts a sit-out chosen afterwards; sit_in while seated does not clear strikes; after the clock sits out all but one player the host must press Start again._
 
-### ⬜ P49 · Web: cards, timer ring, your-turn signal
+### ✅ P49 · Web: cards, timer ring, your-turn signal
 - **Needs:** P47, P40
 - **Do:** Hole and community card components, the timer ring, and vibration on your turn.
 - **Done when:** 375px screenshots of each street.
+- _Note: GO on round 2 (round 1: the bet sheet hid your cards and timer, and a held all-in result was never released). Four-colour cards, timer ring, one vibration per turn (untested on a real phone). Open: no server time on the wire, so a skewed phone clock distorts the ring; nothing says you were sat out by the timer._
 
 ### ⬜ P50 · Web: showdown & hand result
 - **Needs:** P49

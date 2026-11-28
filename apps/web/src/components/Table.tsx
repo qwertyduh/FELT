@@ -1,6 +1,8 @@
 /**
  * The table during a game (P39): seats with names, stacks and this street's bets, the pot(s), the
- * dealer button and whose turn it is, all straight from `room:state`. It only shows; the one thing
+ * dealer button and whose turn it is, all straight from `room:state`. Online it also has the board,
+ * card backs for the others still in the hand and the viewer's own cards (P49); while an all-in
+ * result is held back the room given here is the one `asShown` makes. It only shows; the one thing
  * to tap is an open seat, for someone who may take it.
  *
  * It fills the height its parent can spare (never less than the seats need), so an action bar or
@@ -10,11 +12,16 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import type { PublicRoomState, PublicSeat } from '@felt/protocol';
 import { chips, shortChips } from '../lib/seating';
 import { potName, potTotal, seatPosition, streetName, turnLine } from '../lib/table';
+import { turnTimer, type TurnTimer } from '../lib/turnClock';
 import { BlindCountdown } from './BlindCountdown';
+import { Board } from './cards/Board';
+import { HoleCards } from './cards/HoleCards';
+import { CardBack } from './cards/PlayingCard';
+import { SeatRing, TurnRing } from './TurnRing';
 
 /** Fixed box, positioned by `seatPosition`. */
 const SEAT =
-  'absolute flex h-14 w-17 flex-col items-center justify-center rounded-xl px-0.5 text-center text-xs leading-tight min-[360px]:w-20';
+  'absolute flex h-14 w-(--seat-w) flex-col items-center justify-center rounded-xl px-0.5 text-center text-xs leading-tight';
 
 type Style = { left: string; top: string };
 
@@ -54,6 +61,20 @@ export function AwayMark() {
   );
 }
 
+/** Two backs on the corner that faces out: this player still holds cards. */
+function Backs({ inward }: { inward: 'left' | 'right' }) {
+  return (
+    <span
+      data-testid="card-backs"
+      aria-hidden="true"
+      className={`absolute -top-2.5 flex ${inward === 'left' ? '-right-1' : '-left-1'}`}
+    >
+      <CardBack className="w-3 -rotate-8" />
+      <CardBack className="-ml-1 w-3 rotate-8" />
+    </span>
+  );
+}
+
 function Player({
   seat,
   me,
@@ -61,6 +82,8 @@ function Player({
   dealer,
   inHand,
   over,
+  holding,
+  timer,
   inward,
   style,
 }: {
@@ -72,6 +95,10 @@ function Player({
   inHand: boolean;
   /** The hand has ended: stacks are final, so an all-in loser shows 0. */
   over: boolean;
+  /** Online: another player who still has cards. */
+  holding: boolean;
+  /** The countdown of this seat's turn, if one runs. */
+  timer: TurnTimer | null;
   inward: 'left' | 'right';
   style: Style;
 }) {
@@ -98,6 +125,7 @@ function Player({
     folded ? 'folded' : '',
     allIn ? 'all-in' : '',
     seat.sittingOut ? 'sitting out' : '',
+    holding ? 'has cards' : '',
     seat.connected ? '' : 'away',
   ].filter(Boolean);
   const tone = turn
@@ -139,6 +167,8 @@ function Player({
           <span className="h-[1lh] whitespace-nowrap">{state}</span>
         )}
       </span>
+      {timer && <SeatRing timer={timer} />}
+      {holding && <Backs inward={inward} />}
       {!seat.connected && <AwayMark />}
       {dealer && <Dealer inward={inward} />}
     </li>
@@ -156,12 +186,21 @@ function Middle({ room }: { room: PublicRoomState }) {
       </>
     );
   }
+  const online = room.settings.mode === 'online';
   return (
     <>
       <p className="text-sm text-cream/75">{streetName(hand.street)}</p>
+      {online && <Board cards={hand.board} />}
       <p data-testid="pot" className="leading-tight">
-        <span className="block text-xs tracking-widest text-brass uppercase">Pot</span>
-        <span className="font-display text-3xl font-semibold text-cream tabular-nums">
+        {/* One line under the board, to leave the felt its height. */}
+        <span
+          className={`text-xs tracking-widest text-brass uppercase ${online ? 'mr-2' : 'block'}`}
+        >
+          Pot
+        </span>
+        <span
+          className={`font-display font-semibold text-cream tabular-nums ${online ? 'text-2xl' : 'text-3xl'}`}
+        >
           {shortChips(potTotal(room), 10_000_000)}
         </span>
       </p>
@@ -185,6 +224,8 @@ export function Table({
   selected,
   onPick,
   controls,
+  held = false,
+  ready = true,
 }: {
   room: PublicRoomState;
   userId: string;
@@ -193,8 +234,16 @@ export function Table({
   onPick: ((seat: number) => void) | null;
   /** Laid over the free bottom corners of the felt (sit out, leave). */
   controls?: ReactNode;
+  /** An all-in result is still held back (`useShownRoom`). */
+  held?: boolean;
+  /** False while disconnected: what is on screen may be old, so no countdown. */
+  ready?: boolean;
 }) {
   const count = room.seats.length;
+  const online = room.settings.mode === 'online';
+  const timer = ready ? turnTimer(room) : null;
+  /** The hand is not over on screen while its result is held back. */
+  const over = room.hand?.street === 'ended' && !held;
   const mine = room.seats.findIndex((s) => s?.userId === userId);
   const focus = room.hand?.currentActor ?? (mine < 0 ? null : mine);
   const table = useRef<HTMLDivElement>(null);
@@ -203,10 +252,12 @@ export function Table({
   useEffect(() => {
     const parent = table.current?.parentElement;
     if (focus === null || !parent) return;
+    // Online the board matters most (the turn line below already names who is to act).
     const reveal = () =>
-      table.current
-        ?.querySelector(`[data-testid="seat-${focus}"]`)
-        ?.scrollIntoView?.({ block: 'nearest' });
+      (
+        table.current?.querySelector('[data-testid="board"]') ??
+        table.current?.querySelector(`[data-testid="seat-${focus}"]`)
+      )?.scrollIntoView?.({ block: 'nearest' });
     reveal();
     if (typeof ResizeObserver === 'undefined') return;
     const watch = new ResizeObserver(reveal);
@@ -217,13 +268,20 @@ export function Table({
     <div
       ref={table}
       data-testid="table"
-      className="relative max-h-[32rem] min-h-64 w-full flex-1 shrink-0 [--seat-w:4.25rem] min-[360px]:[--seat-w:5rem]"
+      // Online the felt is wider and the seats narrower, for the board between them.
+      className={`relative max-h-[32rem] min-h-64 flex-1 shrink-0 [--seat-w:4.25rem] ${
+        online ? '-mx-2' : 'w-full min-[360px]:[--seat-w:5rem]'
+      }`}
     >
       <div
         aria-hidden="true"
         className="absolute inset-x-8 inset-y-7 rounded-[45%] border-4 border-brass-dim bg-felt-800"
       />
-      <div className="absolute inset-x-17 inset-y-14 flex flex-col items-center justify-center text-center min-[360px]:inset-x-20">
+      <div
+        className={`absolute inset-y-14 flex flex-col items-center justify-center text-center ${
+          online ? 'inset-x-[calc(var(--seat-w)+1px)]' : 'inset-x-17 min-[360px]:inset-x-20'
+        }`}
+      >
         <Middle room={room} />
       </div>
       <ul aria-label="Seats">
@@ -240,7 +298,14 @@ export function Table({
                 turn={room.hand?.currentActor === i}
                 dealer={dealer}
                 inHand={room.hand !== null}
-                over={room.hand?.street === 'ended'}
+                over={over}
+                holding={
+                  online &&
+                  !over &&
+                  seat.userId !== userId &&
+                  (seat.handStatus === 'active' || seat.handStatus === 'all_in')
+                }
+                timer={room.hand?.currentActor === i ? timer : null}
                 inward={inward}
                 style={style}
               />
@@ -295,54 +360,84 @@ function Figure({ label, value, id }: { label: ReactNode; value: string; id: str
 }
 
 /**
- * Below the felt and outside anything that scrolls: whose turn it is and, for a seated player, the
- * pot and their stack (PRD: never hide money). The amount to call is on the action bar.
+ * Below the felt and outside anything that scrolls: whose turn it is (with the time left, if timed)
+ * and, for a seated player, the pot and their stack (PRD: never hide money), beside their own cards
+ * in an online hand. The amount to call is on the action bar.
  */
 export function TableSummary({
   room,
   userId,
   action,
+  ready = true,
 }: {
   room: PublicRoomState;
   userId: string;
   /** Beside the figures of a seated player (Buy more). */
   action?: ReactNode;
+  /** False while disconnected: whose turn it is may have changed since. */
+  ready?: boolean;
 }) {
   const me = room.seats.find((s) => s?.userId === userId) ?? null;
-  const line = turnLine(room, userId);
+  const line = ready ? turnLine(room, userId) : 'Waiting for the connection';
   const money = (n: number) => shortChips(n, 10_000_000);
-  return (
-    <div className="flex flex-col gap-1 text-center">
-      <p
-        role="status"
-        data-testid="turn-line"
-        className={
-          line === 'Your turn'
-            ? 'text-xl font-bold text-brass'
-            : 'text-base wrap-anywhere text-cream'
-        }
+  const timer = ready ? turnTimer(room) : null;
+  const { hand } = room;
+  const holding =
+    room.settings.mode === 'online' && hand && me && me.handStatus !== null ? hand : null;
+  const words = (
+    <p
+      role="status"
+      data-testid="turn-line"
+      className={
+        line === 'Your turn'
+          ? 'text-xl font-bold text-brass'
+          : `min-w-0 wrap-anywhere text-cream ${
+              // Beside the cards there is less width: a long name takes two lines at most.
+              holding ? 'line-clamp-2 text-sm leading-tight' : 'text-base'
+            }`
+      }
+    >
+      {line}
+    </p>
+  );
+  const figures = me && (
+    <div className="flex items-center gap-2">
+      <dl className="flex min-w-0 flex-1 flex-wrap justify-center gap-x-3 rounded-xl bg-felt-950 px-1">
+        <Figure id="my-pot" label="Pot" value={money(potTotal(room))} />
+        <Figure
+          id="my-stack"
+          label={
+            // "Stack" where it is narrow, so Buy more fits beside it on one line.
+            <>
+              <span className={holding ? 'sr-only' : 'max-[359px]:sr-only'}>Your </span>
+              <span className={holding ? 'capitalize' : 'max-[359px]:capitalize'}>stack</span>
+            </>
+          }
+          value={money(me.stack)}
+        />
+      </dl>
+      {action}
+    </div>
+  );
+  const status = (
+    <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 text-center">
+      {/* A timed room keeps the ring's height, so nothing shifts from turn to turn. */}
+      <div
+        className={`flex items-center justify-center gap-2 ${
+          room.settings.turnTimerSeconds === null ? '' : 'min-h-9'
+        }`}
       >
-        {line}
-      </p>
-      {me && (
-        <div className="flex items-center gap-2">
-          <dl className="flex min-w-0 flex-1 flex-wrap justify-center gap-x-3 rounded-xl bg-felt-950 px-1">
-            <Figure id="my-pot" label="Pot" value={money(potTotal(room))} />
-            <Figure
-              id="my-stack"
-              label={
-                // "Stack" on the narrowest screens, so Buy more fits beside it on one line.
-                <>
-                  <span className="max-[359px]:sr-only">Your </span>
-                  <span className="max-[359px]:capitalize">stack</span>
-                </>
-              }
-              value={money(me.stack)}
-            />
-          </dl>
-          {action}
-        </div>
-      )}
+        {words}
+        {timer && <TurnRing timer={timer} />}
+      </div>
+      {figures}
+    </div>
+  );
+  if (!holding) return status;
+  return (
+    <div className="flex items-center gap-2">
+      <HoleCards handId={holding.handId} folded={me!.handStatus === 'folded'} />
+      {status}
     </div>
   );
 }

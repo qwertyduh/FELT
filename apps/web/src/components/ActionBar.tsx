@@ -37,14 +37,17 @@ import { DEALS, hostStep } from '../lib/hybrid';
 import type { AckResult, SocketClient } from '../lib/realtime/socketClient';
 import { chips, shortChips } from '../lib/seating';
 import { absentActor, potTotal, toCall } from '../lib/table';
+import { turnTimer, type TurnTimer } from '../lib/turnClock';
 import { usePressGuard } from '../lib/usePressGuard';
 import { useStillCards } from '../lib/useStillCards';
+import { HoleCards } from './cards/HoleCards';
 import { AdjustSheet } from './hybrid/AdjustSheet';
 import { AwardBanner } from './hybrid/AwardBanner';
 import { AwardSheet } from './hybrid/AwardSheet';
 import { CardSheet } from './hybrid/CardSheet';
 import { ForceFoldSheet } from './ForceFoldSheet';
 import { UndoSheet } from './hybrid/UndoSheet';
+import { TurnRing } from './TurnRing';
 
 export const ACTION_ARM_MS = 400;
 export const ACTION_NOTICE_MS = 4_000;
@@ -65,6 +68,9 @@ function SizeSheet({
   tap,
   bet,
   notice,
+  cards,
+  timer,
+  ready,
   onBack,
   onSend,
 }: {
@@ -78,6 +84,11 @@ function SizeSheet({
   /** Already in on this street: the total less this is what the move puts in. */
   bet: number;
   notice: ReactNode;
+  /** Online: the player's own cards, which the sheet lies over. */
+  cards: ReactNode;
+  /** The countdown, which it lies over too. */
+  timer: TurnTimer | null;
+  ready: boolean;
   onBack: () => void;
   onSend: (move: Move) => void;
 }) {
@@ -105,14 +116,24 @@ function SizeSheet({
         <span>Stack {money(stack)}</span>
         <span>To call {money(call)}</span>
       </p>
-      <div className="text-center">
-        <p data-testid="size-amount" className="text-2xl font-semibold text-cream tabular-nums">
-          {chips(amount)}
-        </p>
-        <p data-testid="size-adds" className="text-sm text-cream/75 tabular-nums">
-          {raise.type === 'bet' && !allIn ? 'Your bet' : 'Street total'} · you put in{' '}
-          {chips(amount - bet)} more
-        </p>
+      {/* Beside the amount, so the sheet grows as little as it can over the board. */}
+      <div className="flex items-center gap-2">
+        {cards}
+        <div className="min-w-0 flex-1 text-center">
+          {(cards !== null || timer) && (
+            <p data-testid="size-turn" className="text-sm leading-tight font-bold text-brass">
+              {ready ? 'Your turn' : 'Waiting for the connection'}
+            </p>
+          )}
+          <p data-testid="size-amount" className="text-2xl font-semibold text-cream tabular-nums">
+            {chips(amount)}
+          </p>
+          <p data-testid="size-adds" className="text-sm leading-tight text-cream/75 tabular-nums">
+            {raise.type === 'bet' && !allIn ? 'Your bet' : 'Street total'} · you put in{' '}
+            {chips(amount - bet)} more
+          </p>
+        </div>
+        {timer && ready && <TurnRing timer={timer} testId="size-ring" />}
       </div>
       {raise.min < raise.max && (
         <>
@@ -459,6 +480,18 @@ export function ActionBar({
           turnKey={turnKey}
           tap={tap}
           notice={sheetAlert}
+          cards={
+            room.settings.mode === 'online' ? (
+              <HoleCards
+                handId={turn.hand.handId}
+                folded={false}
+                size="w-10 min-[360px]:w-12"
+                testId="size-cards"
+              />
+            ) : null
+          }
+          timer={turnTimer(room)}
+          ready={ready}
           onBack={close}
           onSend={act}
         />

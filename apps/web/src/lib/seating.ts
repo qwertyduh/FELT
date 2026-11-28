@@ -77,8 +77,6 @@ export function startFailure({ code }: ErrorPayload): string {
       return 'Two players with chips, not sitting out, are needed to start.';
     case 'illegal_action':
       return 'The game is already running.';
-    case 'wrong_mode':
-      return "Online games can't start yet.";
     case 'rate_limited':
       return TOO_MANY;
     case 'timeout':
