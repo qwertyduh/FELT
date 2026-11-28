@@ -391,10 +391,11 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** 375px screenshots of each street.
 - _Note: GO on round 2 (round 1: the bet sheet hid your cards and timer, and a held all-in result was never released). Four-colour cards, timer ring, one vibration per turn (untested on a real phone). Open: no server time on the wire, so a skewed phone clock distorts the ring; nothing says you were sat out by the timer._
 
-### ⬜ P50 · Web: showdown & hand result
+### ✅ P50 · Web: showdown & hand result
 - **Needs:** P49
 - **Do:** Reveal order, a muck option for losers and a result banner (winner, hand name, pots).
 - **Done when:** Playwright covers a showdown with a split.
+- _Note: GO on round 2 (round 1: the host's remove-player sheet revealed the result during an all-in run-out; double-tapping Show on a paused table resumed the game). Banner replaces the blinds line; opponents' stacks are hidden while their cards are shown; Buy more, open seats and top-up Approve are unavailable for the few seconds of a run-out. Open: the result is in the wire data during the run-out; a top-up refusal can leak it in a one-round-trip race; if a hand ends while paused, Show appears under the right part of the Resume button._
 
 ### ⬜ P51 · Online E2E game
 - **Needs:** P48, P50

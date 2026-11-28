@@ -7,11 +7,13 @@ import { chips } from './seating';
 
 /**
  * What removing this player does, as the server does it (`handStaysLive` in rooms/game.ts): their
- * cards stay in play when they are all-in, at showdown, or when nothing is left to bet.
+ * cards stay in play when they are all-in, at showdown, or when nothing is left to bet. While an
+ * all-in run-out is being dealt (`held`) the real stack is the result, so no figure is named.
  */
-export function kickFate(room: PublicRoomState, userId: string): string {
+export function kickFate(room: PublicRoomState, userId: string, held = false): string {
   const seat = room.seats.find((s) => s?.userId === userId) ?? null;
   if (!seat) return 'They stop seeing the table.';
+  if (held) return 'Their chips are cashed out.';
   const { hand } = room;
   if (
     !hand ||

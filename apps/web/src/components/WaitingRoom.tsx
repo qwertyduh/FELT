@@ -27,6 +27,7 @@ import { useTurnSignal } from '../lib/useTurnSignal';
 import { BuyMore } from './BuyMore';
 import { RoomLog } from './hybrid/RoomLog';
 import { InviteButton } from './InviteButton';
+import { ResultBanner } from './ResultBanner';
 import { SeatControls } from './SeatControls';
 import { SeatMap } from './SeatMap';
 import { Table, TableSummary } from './Table';
@@ -209,8 +210,8 @@ export function WaitingRoom({
   const [busy, setBusy] = useState(false);
   const sending = useRef(false);
   useTurnSignal(room, userId);
-  // What the table says: an all-in result is held back for a moment.
-  const { room: shown, held } = useShownRoom(room);
+  // What the table says: an all-in run-out is dealt street by street before its result.
+  const { room: shown, held } = useShownRoom(room, ready);
 
   const hosting = room.hostId === userId;
   const mine = room.seats.find((s) => s?.userId === userId) ?? null;
@@ -218,7 +219,8 @@ export function WaitingRoom({
   const full = room.seats.every(Boolean);
   /** The only amount a returning player may sit with: what they left with (0 if busted). */
   const exact = returning === null ? null : returning.kind === 'exact' ? returning.amount : 0;
-  const canSit = !mine && room.status !== 'ended';
+  // Not during a run-out: someone cashed out by that hand is told what they must sit back down with.
+  const canSit = !mine && room.status !== 'ended' && !held;
 
   // The selected seat filled up (or we are seated): the form no longer applies.
   if (selected !== null && !busy && (mine !== null || room.seats[selected] !== null)) {
@@ -313,17 +315,33 @@ export function WaitingRoom({
   const seatControls = (place: 'table' | 'map') =>
     mine &&
     room.status !== 'ended' && (
-      <SeatControls room={room} me={mine} ready={ready} client={client} place={place} />
+      <SeatControls room={room} me={mine} ready={ready} client={client} place={place} held={held} />
     );
+  /** An online hand has ended: its result takes the blinds row's place until the next deal. */
+  const result = started && room.settings.mode === 'online' && shown.hand?.outcome !== undefined;
+  /** Paused it can last: on a screen with room to spare the line (and Invite) comes back. */
+  const rowClass = !result
+    ? 'flex'
+    : room.paused
+      ? 'hidden [@media(min-height:640px)]:flex'
+      : 'hidden';
   const buyMore = mine && room.status !== 'ended' && (
-    <BuyMore room={shown} me={shownMine!} ready={ready} client={client} compact={started} />
+    <BuyMore
+      room={shown}
+      me={shownMine!}
+      ready={ready}
+      client={client}
+      compact={started}
+      held={held}
+    />
   );
 
   return (
     <>
       <div className={`flex flex-1 flex-col gap-2 ${ABOVE_REQUESTS}`}>
+        {result && <ResultBanner room={shown} userId={userId} held={held} />}
         <div
-          className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-1 ${
+          className={`${rowClass} flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-1 ${
             started ? '[[data-testid=entered-room]:has([data-testid=host-inbox])_&]:order-last' : ''
           }`}
         >

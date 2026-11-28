@@ -69,3 +69,15 @@ body {
     transform: none;
   }
 }
+
+/* A revealed hand turning face up (P50). */
+@keyframes felt-flip {
+  from {
+    opacity: 0;
+    transform: scaleX(0.15);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

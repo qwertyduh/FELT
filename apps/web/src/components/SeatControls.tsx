@@ -7,6 +7,7 @@
  * Tap protections as elsewhere: a button takes no taps until it has been in place for
  * `SEAT_ARM_MS` (also after what the sheet says changes), and a tap must begin on it. The sheet is
  * closed when your turn or a proposed award arrives, so it is never laid over a fresh decision.
+ * While an all-in run-out is being dealt, Leave is off: its sheet would name the final stack.
  */
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -111,6 +112,7 @@ export function SeatControls({
   ready,
   client,
   place,
+  held = false,
 }: {
   room: PublicRoomState;
   me: PublicSeat;
@@ -119,6 +121,8 @@ export function SeatControls({
   client: Client;
   /** Where in the felt: the table's bottom corners, or the middle of the lobby's seat map. */
   place: 'table' | 'map';
+  /** An all-in result is not out yet (`useShownRoom`). */
+  held?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const { list, tap } = useGuarded(ready && !busy);
@@ -140,7 +144,7 @@ export function SeatControls({
     setWasUrgent(urgent);
     if (urgent) setOpen(false);
   }
-  if (open && leaving) setOpen(false);
+  if (open && (leaving || held)) setOpen(false);
 
   async function send(event: 'room:sit_out' | 'room:sit_in' | 'room:leave') {
     if (busy || !ready) return;
@@ -210,6 +214,7 @@ export function SeatControls({
               setError(null);
               setOpen(true);
             })}
+            {...(held ? { disabled: true } : {})}
           >
             Leave
           </button>

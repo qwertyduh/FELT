@@ -1,27 +1,36 @@
 /**
  * The table during a game (P39): seats with names, stacks and this street's bets, the pot(s), the
  * dealer button and whose turn it is, all straight from `room:state`. Online it also has the board,
- * card backs for the others still in the hand and the viewer's own cards (P49); while an all-in
- * result is held back the room given here is the one `asShown` makes. It only shows; the one thing
- * to tap is an open seat, for someone who may take it.
+ * card backs for the others still in the hand and the viewer's own cards (P49). Once a hand has
+ * ended, the hands the server revealed turn face up on their seats, in its order, and the winners
+ * are marked (P50); while an all-in result is held back the room given here is the one `asShown`
+ * makes, which has no winners. It only shows; the one thing to tap is an open seat, for someone who
+ * may take it.
  *
  * It fills the height its parent can spare (never less than the seats need), so an action bar or
  * the request cards below simply leave it less.
  */
 import { useEffect, useRef, type ReactNode } from 'react';
-import type { PublicRoomState, PublicSeat } from '@felt/protocol';
+import type { PublicRoomState, PublicSeat, ShownHand } from '@felt/protocol';
+import { cardName } from '../lib/cards';
+import { winnings } from '../lib/result';
 import { chips, shortChips } from '../lib/seating';
 import { potName, potTotal, seatPosition, streetName, turnLine } from '../lib/table';
 import { turnTimer, type TurnTimer } from '../lib/turnClock';
 import { BlindCountdown } from './BlindCountdown';
 import { Board } from './cards/Board';
 import { HoleCards } from './cards/HoleCards';
-import { CardBack } from './cards/PlayingCard';
+import { CardBack, PlayingCard } from './cards/PlayingCard';
 import { SeatRing, TurnRing } from './TurnRing';
 
 /** Fixed box, positioned by `seatPosition`. */
 const SEAT =
   'absolute flex h-14 w-(--seat-w) flex-col items-center justify-center rounded-xl px-0.5 text-center text-xs leading-tight';
+
+/** Between one revealed hand and the next, in the server's showing order. */
+export const REVEAL_STEP_MS = 300;
+/** However many hands there are, the last starts to turn within this. */
+const REVEAL_SPAN_MS = 900;
 
 type Style = { left: string; top: string };
 
@@ -75,6 +84,21 @@ function Backs({ inward }: { inward: 'left' | 'right' }) {
   );
 }
 
+/** A revealed hand, in place of the stack: large enough to read, inside the seat's own box. */
+function Revealed({ hand, delay }: { hand: ShownHand; delay: number }) {
+  return (
+    <span
+      data-testid="shown-cards"
+      className="flex justify-center gap-px"
+      style={{ animation: `felt-flip 260ms ease-out ${delay}ms both` }}
+    >
+      {hand.cards.map((card) => (
+        <PlayingCard key={card} card={card} className="w-[1.9375rem]" />
+      ))}
+    </span>
+  );
+}
+
 function Player({
   seat,
   me,
@@ -84,6 +108,9 @@ function Player({
   over,
   holding,
   timer,
+  shown,
+  delay,
+  won,
   inward,
   style,
 }: {
@@ -99,6 +126,12 @@ function Player({
   holding: boolean;
   /** The countdown of this seat's turn, if one runs. */
   timer: TurnTimer | null;
+  /** This player's hand, face up after an online hand. */
+  shown: ShownHand | null;
+  /** Before it starts to turn over. */
+  delay: number;
+  /** Chips won from the ended hand; 0 while it runs or its result is held. */
+  won: number;
   inward: 'left' | 'right';
   style: Style;
 }) {
@@ -126,47 +159,69 @@ function Player({
     allIn ? 'all-in' : '',
     seat.sittingOut ? 'sitting out' : '',
     holding ? 'has cards' : '',
+    shown ? `shows ${shown.cards.map(cardName).join(' and ')}` : '',
+    won > 0 ? `wins ${chips(won)}` : '',
     seat.connected ? '' : 'away',
   ].filter(Boolean);
+  const edge = !seat.connected
+    ? 'border-dashed border-chip-red'
+    : me
+      ? 'border-brass'
+      : 'border-felt-700';
   const tone = turn
-    ? 'border-cream bg-brass text-felt-950 ring-4 ring-brass/50'
-    : `bg-felt-950 text-cream ${
-        !seat.connected ? 'border-dashed border-chip-red' : me ? 'border-brass' : 'border-felt-700'
-      }`;
+    ? 'border-2 border-cream bg-brass text-felt-950 ring-4 ring-brass/50'
+    : shown
+      ? // No border: the cards need the room. A ring takes none.
+        `bg-felt-950 text-cream ${won > 0 ? 'ring-3 ring-brass' : 'ring-1 ring-felt-700'}`
+      : `border-2 bg-felt-950 text-cream ${won > 0 ? 'border-brass ring-3 ring-brass' : edge}`;
   return (
     <li
       data-testid={`seat-${seat.seat}`}
       aria-label={label.join(', ')}
       aria-current={turn ? 'true' : undefined}
-      className={`${SEAT} border-2 ${tone}`}
+      className={`${SEAT} ${tone}`}
       style={style}
     >
-      {/* Dimmed inside, so the box still hides the felt behind it. */}
-      <span
-        className={`flex w-full flex-col items-center ${folded || !seat.connected ? 'opacity-50' : ''}`}
-      >
-        <span
-          title={seat.username}
-          className={`w-full truncate ${me && !turn ? 'text-brass' : ''} ${turn ? 'font-semibold' : ''}`}
-        >
-          {seat.username}
-        </span>
-        <span className="font-semibold tabular-nums">
-          {allIn && seat.stack === 0 && !over ? 'All-in' : shortChips(seat.stack)}
-        </span>
-        {seat.bet > 0 ? (
+      {shown ? (
+        <>
           <span
-            data-testid="bet"
-            className={`rounded-full px-1.5 font-semibold tabular-nums ${
-              turn ? 'bg-felt-950 text-brass' : 'bg-brass text-felt-950'
+            title={seat.username}
+            className={`w-full truncate text-[11px] leading-3 ${
+              won > 0 ? 'rounded-t-md bg-brass font-bold text-felt-950' : me ? 'text-brass' : ''
             }`}
           >
-            {shortChips(seat.bet, 100_000)}
+            {seat.username}
           </span>
-        ) : (
-          <span className="h-[1lh] whitespace-nowrap">{state}</span>
-        )}
-      </span>
+          <Revealed key={shown.cards.join('')} hand={shown} delay={delay} />
+        </>
+      ) : (
+        /* Dimmed inside, so the box still hides the felt behind it. */
+        <span
+          className={`flex w-full flex-col items-center ${folded || !seat.connected ? 'opacity-50' : ''}`}
+        >
+          <span
+            title={seat.username}
+            className={`w-full truncate ${me && !turn ? 'text-brass' : ''} ${turn ? 'font-semibold' : ''}`}
+          >
+            {seat.username}
+          </span>
+          <span className="font-semibold tabular-nums">
+            {allIn && seat.stack === 0 && !over ? 'All-in' : shortChips(seat.stack)}
+          </span>
+          {seat.bet > 0 ? (
+            <span
+              data-testid="bet"
+              className={`rounded-full px-1.5 font-semibold tabular-nums ${
+                turn ? 'bg-felt-950 text-brass' : 'bg-brass text-felt-950'
+              }`}
+            >
+              {shortChips(seat.bet, 100_000)}
+            </span>
+          ) : (
+            <span className="h-[1lh] whitespace-nowrap">{state}</span>
+          )}
+        </span>
+      )}
       {timer && <SeatRing timer={timer} />}
       {holding && <Backs inward={inward} />}
       {!seat.connected && <AwayMark />}
@@ -204,15 +259,17 @@ function Middle({ room }: { room: PublicRoomState }) {
           {shortChips(potTotal(room), 10_000_000)}
         </span>
       </p>
-      {hand.pots.length > 1 && (
-        <ul aria-label="Pots" className="mt-1 flex flex-wrap justify-center gap-x-2 text-xs">
-          {hand.pots.map((pot, i) => (
-            <li key={pot.id} className="whitespace-nowrap text-cream/75 tabular-nums">
-              {potName(i, hand.pots.length)} {shortChips(pot.amount, 100_000)}
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* Once an online hand has ended the result lists the pots; many would not fit here. */}
+      {hand.pots.length > 1 &&
+        (!hand.outcome || (!hand.outcome.awards.length && hand.pots.length <= 3)) && (
+          <ul aria-label="Pots" className="mt-1 flex flex-wrap justify-center gap-x-2 text-xs">
+            {hand.pots.map((pot, i) => (
+              <li key={pot.id} className="whitespace-nowrap text-cream/75 tabular-nums">
+                {potName(i, hand.pots.length)} {shortChips(pot.amount, 100_000)}
+              </li>
+            ))}
+          </ul>
+        )}
       <BlindCountdown room={room} />
     </>
   );
@@ -246,6 +303,11 @@ export function Table({
   const over = room.hand?.street === 'ended' && !held;
   const mine = room.seats.findIndex((s) => s?.userId === userId);
   const focus = room.hand?.currentActor ?? (mine < 0 ? null : mine);
+  /** What the server revealed of an ended online hand, and who took chips from it. */
+  const outcome = online ? room.hand?.outcome : undefined;
+  const won = outcome ? winnings(outcome) : null;
+  const byRules = outcome?.hands.filter((h) => !h.voluntary) ?? [];
+  const stagger = Math.min(REVEAL_STEP_MS, REVEAL_SPAN_MS / Math.max(1, byRules.length - 1));
   const table = useRef<HTMLDivElement>(null);
   // Squeezed (request cards on a short screen) the table's parent scrolls: keep whoever is to act,
   // or else the viewer, in sight. Again whenever the room for it changes.
@@ -290,6 +352,7 @@ export function Table({
           const inward = seatPosition(i, count).x > 0.5 ? 'left' : 'right';
           const dealer = room.button === i;
           if (seat) {
+            const revealed = outcome?.hands.find((h) => h.userId === seat.userId) ?? null;
             return (
               <Player
                 key={i}
@@ -299,9 +362,14 @@ export function Table({
                 dealer={dealer}
                 inHand={room.hand !== null}
                 over={over}
+                shown={revealed}
+                // A voluntary show turns over when it is tapped; the rest in showing order.
+                delay={revealed && !revealed.voluntary ? byRules.indexOf(revealed) * stagger : 0}
+                won={won?.get(seat.userId) ?? 0}
                 holding={
                   online &&
                   !over &&
+                  !revealed &&
                   seat.userId !== userId &&
                   (seat.handStatus === 'active' || seat.handStatus === 'all_in')
                 }
@@ -382,6 +450,10 @@ export function TableSummary({
   const money = (n: number) => shortChips(n, 10_000_000);
   const timer = ready ? turnTimer(room) : null;
   const { hand } = room;
+  /** An online hand has ended: the result banner is up. */
+  const resulted = room.settings.mode === 'online' && hand?.outcome !== undefined;
+  /** The banner says it better: these words give up their room. */
+  const quiet = resulted && (line === 'Hand over' || line === 'Dealing…');
   const holding =
     room.settings.mode === 'online' && hand && me && me.handStatus !== null ? hand : null;
   const words = (
@@ -389,12 +461,14 @@ export function TableSummary({
       role="status"
       data-testid="turn-line"
       className={
-        line === 'Your turn'
-          ? 'text-xl font-bold text-brass'
-          : `min-w-0 wrap-anywhere text-cream ${
-              // Beside the cards there is less width: a long name takes two lines at most.
-              holding ? 'line-clamp-2 text-sm leading-tight' : 'text-base'
-            }`
+        quiet
+          ? 'sr-only'
+          : line === 'Your turn'
+            ? 'text-xl font-bold text-brass'
+            : `min-w-0 wrap-anywhere text-cream ${
+                // Beside the cards there is less width: a long name takes two lines at most.
+                holding ? 'line-clamp-2 text-sm leading-tight' : 'text-base'
+              }`
       }
     >
       {line}
@@ -420,11 +494,13 @@ export function TableSummary({
     </div>
   );
   const status = (
-    <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 text-center">
+    <div
+      className={`flex min-w-0 flex-1 flex-col justify-center text-center ${quiet ? '' : 'gap-1'}`}
+    >
       {/* A timed room keeps the ring's height, so nothing shifts from turn to turn. */}
       <div
         className={`flex items-center justify-center gap-2 ${
-          room.settings.turnTimerSeconds === null ? '' : 'min-h-9'
+          room.settings.turnTimerSeconds === null || resulted ? '' : 'min-h-9'
         }`}
       >
         {words}

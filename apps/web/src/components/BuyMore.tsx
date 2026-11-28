@@ -4,6 +4,9 @@
  * it takes a tap), so the action bar and request cards never move. The button says where a request
  * stands; chips only ever change through `room:state`.
  *
+ * Off while an all-in run-out is being dealt (`held`): a refusal there names the room left under the
+ * maximum, which gives the final stack away.
+ *
  * `compact`, beside the stack at the table: no taller than that line (a 320x568 screen with a
  * request card has no height to spare), with the tap area reaching above and below it.
  */
@@ -142,6 +145,7 @@ export function BuyMore({
   ready,
   client,
   compact = false,
+  held = false,
 }: {
   room: PublicRoomState;
   me: PublicSeat;
@@ -149,13 +153,16 @@ export function BuyMore({
   ready: boolean;
   client: Client;
   compact?: boolean;
+  /** An all-in result is not out yet (`useShownRoom`). */
+  held?: boolean;
 }) {
   const waiting = useRoomStore((s) => s.topUp);
   const queued = room.pendingTopUps[me.userId];
   const full = roomToAdd(room.settings, me.stack) === 0;
   const [open, setOpen] = useState(false);
 
-  const blocked = queued !== undefined || waiting !== null || full || room.status === 'ended';
+  const blocked =
+    held || queued !== undefined || waiting !== null || full || room.status === 'ended';
   // A proposed award has a short window to dispute: nothing of ours stays over it.
   const awarding = (room.hand?.pendingAwards.length ?? 0) > 0 && room.hand?.street !== 'ended';
   const [wasAwarding, setWasAwarding] = useState(awarding);

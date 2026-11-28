@@ -28,6 +28,7 @@ import { hostFailure, kickFate } from '../lib/hostControls';
 import { useRoomStore } from '../lib/realtime/roomStore';
 import type { AckResult, SocketClient } from '../lib/realtime/socketClient';
 import { usePressGuard } from '../lib/usePressGuard';
+import { useResultHeld } from '../lib/useShownRoom';
 import { useStillCards } from '../lib/useStillCards';
 
 export const HOST_ARM_MS = 400;
@@ -270,6 +271,7 @@ function Sheet({
   });
 
   const members = useRoomStore((s) => s.members);
+  const resultPending = useResultHeld(room);
   const others = members
     .filter((m) => m.userId !== userId)
     .map((m) => {
@@ -315,7 +317,7 @@ function Sheet({
   }
 
   const hand = room.hand && room.hand.street !== 'ended';
-  const fate = view.name === 'kick' && target ? kickFate(room, target.userId) : '';
+  const fate = view.name === 'kick' && target ? kickFate(room, target.userId, resultPending) : '';
   const started = room.status === 'playing' || room.status === 'paused';
   const paused = room.status === 'paused';
   const holdMinutes = room.seatHoldMinutes ?? DEFAULT_SEAT_HOLD_MINUTES;

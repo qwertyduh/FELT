@@ -26,6 +26,10 @@ export interface RoomStoreState {
   invalidDropped: number;
   /** Own hole cards for the current hand only. */
   privateHand: PrivateHand | null;
+  /** Everyone seen on a seat in this room: a cashed-out player can still be in a hand's result. */
+  names: Record<string, string>;
+  /** The ended hand whose all-in run-out has been dealt out on this screen. */
+  releasedHandId: string | null;
   /** Own top-up request still waiting for the host. */
   topUp: TopUpStatus['pending'];
   /** The host's latest answer to it, until the toast has been shown. */
@@ -48,6 +52,8 @@ export const initialRoomState: RoomStoreState = {
   needsResync: false,
   invalidDropped: 0,
   privateHand: null,
+  names: {},
+  releasedHandId: null,
   topUp: null,
   topUpDecision: null,
   members: [],
@@ -80,8 +86,11 @@ export function applyRoomState(next: unknown): boolean {
   // Only a switch from ANOTHER room clears it: on the first state of a room, `host:inbox` (which
   // the server sends just before it) must survive.
   const switched = s.room !== null && !sameRoom;
+  const names = switched ? {} : { ...s.names };
+  for (const seat of incoming.seats) if (seat) names[seat.userId] = seat.username;
   useRoomStore.setState({
     ...(switched ? { ...initialRoomState, invalidDropped: s.invalidDropped } : {}),
+    names,
     room: incoming,
     lastVersion: incoming.version,
     status: 'ready',

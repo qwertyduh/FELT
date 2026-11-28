@@ -10,6 +10,9 @@
  * turn timer off, the host's button row offers to fold a disconnected player on turn (P45), behind
  * a sheet that names them.
  *
+ * After an online hand, a player whose cards were not revealed has one button here: Show, in the
+ * right-hand column so that a repeated tap on Check or Call cannot land on it (P50).
+ *
  * Money safety: a button takes no taps until it has been in place for `ACTION_ARM_MS` (new on
  * every change to the hand, and after a sheet opens or closes), a tap must begin on it, and every
  * send quotes the `turnSeq` it was made for and waits for its ack.
@@ -34,6 +37,7 @@ import {
 } from '../lib/actions';
 import { OUTLINE, SHEET, SOLID, type Tap } from '../lib/actionUi';
 import { DEALS, hostStep } from '../lib/hybrid';
+import { useRoomStore } from '../lib/realtime/roomStore';
 import type { AckResult, SocketClient } from '../lib/realtime/socketClient';
 import { chips, shortChips } from '../lib/seating';
 import { absentActor, potTotal, toCall } from '../lib/table';
@@ -265,6 +269,15 @@ export function ActionBar({
     return () => clearTimeout(id);
   }, [notice]);
 
+  /** Our cards of this ended online hand are still face down to the others. */
+  const dealtHand = useRoomStore((s) => s.privateHand?.handId ?? null);
+  const showable =
+    room.settings.mode === 'online' &&
+    me !== null &&
+    hand?.outcome !== undefined &&
+    dealtHand === hand.handId &&
+    !hand.outcome.hands.some((h) => h.userId === userId);
+
   // A sheet's buttons are armed by the same check, also when nothing else is up.
   const resumable = hosting && room.status === 'paused';
   const active =
@@ -273,6 +286,7 @@ export function ActionBar({
     Boolean(proposed) ||
     opened !== null ||
     resumable ||
+    showable ||
     absent !== null;
   const { list, held, isStill } = useStillCards<HTMLElement>(active, ACTION_ARM_MS);
   const guard = usePressGuard();
@@ -336,6 +350,14 @@ export function ActionBar({
   );
   /** A sheet covers the bar's own line, so it repeats a refusal. */
   const sheetAlert = alert && <p className="flex justify-center text-sm">{alert}</p>;
+
+  /** An ended hand keeps Show's column to itself: a second tap there must not reach Resume. */
+  const showColumn = room.settings.mode === 'online' && hand?.outcome !== undefined;
+
+  function showCards() {
+    if (!hand) return;
+    void send('hand:show', () => client.emitWithAck('hand:show', { handId: hand.handId }));
+  }
 
   const raise = turn?.options.raise ?? null;
   const sizing = raise !== null && opened === 'size';
@@ -413,16 +435,26 @@ export function ActionBar({
           </button>
         )}
       </div>
-      {resumable && (
-        <div className="grid">
-          {button(
-            'Resume game',
-            SOLID,
-            () => void resume(),
-            undefined,
-            // Not tied to the hand: it may be paused with none, and more than once.
-            'resume',
-          )}
+      {(resumable || showable) && (
+        <div className="grid grid-cols-3 gap-2">
+          {resumable &&
+            button(
+              'Resume game',
+              `${SOLID} ${showColumn ? 'col-span-2' : 'col-span-3'}`,
+              () => void resume(),
+              undefined,
+              // Not tied to the hand: it may be paused with none, and more than once.
+              'resume',
+            )}
+          {showable &&
+            // Tied to the hand only: someone else showing must not hold it again.
+            button(
+              'Show',
+              `${OUTLINE} col-start-3`,
+              showCards,
+              'your cards',
+              `show:${hand!.handId}`,
+            )}
         </div>
       )}
       {absent && !folding && (

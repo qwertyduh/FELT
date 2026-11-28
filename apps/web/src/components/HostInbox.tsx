@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { ErrorCode } from '@felt/protocol';
 import { removeJoinRequest, removeTopUpRequest, useRoomStore } from '../lib/realtime/roomStore';
+import { useResultHeld } from '../lib/useShownRoom';
 import type { SocketClient } from '../lib/realtime/socketClient';
 import { useStillCards } from '../lib/useStillCards';
 
@@ -51,6 +52,8 @@ export function HostInbox({
 }) {
   const hosting = useRoomStore((s) => s.room?.hostId === userId);
   const seats = useRoomStore((s) => s.room?.seats);
+  // A top-up is refused if it would pass the maximum: during a run-out that answers who won.
+  const resultPending = useResultHeld(useRoomStore((s) => s.room));
   const { joinRequests, topUpRequests } = useRoomStore((s) => s.hostInbox);
   /** requestIds with an answer in flight. */
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
@@ -202,7 +205,7 @@ export function HostInbox({
                   type="button"
                   aria-label={yes}
                   className={`${BUTTON} ${compact ? 'min-h-11' : 'min-h-12'} bg-brass text-felt-950 disabled:bg-felt-800 disabled:text-cream/40`}
-                  disabled={off}
+                  disabled={off || (kind === 'topup' && resultPending)}
                   onPointerDown={press(requestId, true)}
                   onClick={click(card, true)}
                 >
