@@ -340,6 +340,8 @@ export const HostMembersSchema = z
             username: z.string().min(1).max(20).nullable(),
             seated: z.boolean(),
             leaving: z.boolean(),
+            /** Being removed when the running hand ends; absent otherwise. */
+            removing: z.literal(true).optional(),
           })
           .strict(),
       )

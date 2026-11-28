@@ -28,6 +28,12 @@ export interface RoomRegistryOptions {
   /** True while a room has connected sockets; such rooms are never evicted. */
   isRoomActive?: (code: RoomCode) => boolean;
   actor?: RoomActorOptions;
+  /**
+   * The stored record as this process takes it up, before its actor exists (e.g. clocks that ran
+   * out while the server was down). Returns the same object when there is nothing to change; a
+   * change is saved with the room's next commit.
+   */
+  rehydrate?: (room: RoomRecord) => RoomRecord;
   /** Called once for each actor built from the stored record (e.g. to re-arm its timers). */
   onLoad?: (room: Readonly<RoomRecord>) => void;
   /**
@@ -79,11 +85,12 @@ export class RoomRegistry {
     const inflight = this.loading.get(code);
     if (inflight) return inflight;
     const p = (async () => {
-      const record = await this.store.get(code);
-      if (!record || this.closed) {
+      const stored = await this.store.get(code);
+      if (!stored || this.closed) {
         this.outdated.delete(code);
         return null;
       }
+      const record = this.opts.rehydrate?.(stored) ?? stored;
       const actor = new RoomActor(record, this.store, {
         now: () => this.clock.now(),
         onGone: (a) => {

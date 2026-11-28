@@ -225,6 +225,7 @@ export async function buildApp(env: Env, deps: AppDeps): Promise<FastifyInstance
         // Rooms with admitted sockets in them are never evicted.
         isRoomActive: (code) => app.realtime.io.sockets.adapter.rooms.has(roomChannel(code)),
         actor: { onCommit: committed, onCommitError: commitError },
+        rehydrate: (room) => late.games?.rehydrate(room) ?? room,
         onLoad: (room) => {
           late.games?.loaded(room);
           late.presence?.loaded(room);

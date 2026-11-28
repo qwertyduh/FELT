@@ -144,9 +144,13 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
     if (!jwksUrl.startsWith('https://')) {
       throw invalid('SUPABASE_JWKS_URL: must be https in production');
     }
-    // Database calls carry the service-role key.
-    if (data.SUPABASE_API_URL && !data.SUPABASE_API_URL.startsWith('https://')) {
-      throw invalid('SUPABASE_API_URL: must be https in production');
+    // Database calls carry the service-role key: whichever URL they go to (db/supabase.ts).
+    const [name, dbUrl] =
+      data.SUPABASE_API_URL === undefined
+        ? ['SUPABASE_URL', data.SUPABASE_URL]
+        : ['SUPABASE_API_URL', data.SUPABASE_API_URL];
+    if (!dbUrl.startsWith('https://')) {
+      throw invalid(`${name}: must be https in production`);
     }
   }
   return { ...data, SUPABASE_JWKS_URL: jwksUrl };

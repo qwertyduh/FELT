@@ -5,6 +5,13 @@ export const MAX_CHIPS = 1_000_000_000;
 
 /** How many entries the public room log keeps (the oldest drop off). */
 export const ROOM_LOG_LIMIT = 20;
+/** This many turns in a row running out sit a player out (PRD 5.4). */
+export const TIMEOUTS_TO_SIT_OUT = 2;
+/**
+ * With the turn timer off, the clock a turn still gets where somebody who never acts would keep a
+ * host's decision from taking effect: a player being removed, and everyone once the game is ending.
+ */
+export const FORCED_TURN_SECONDS = 60;
 export const ADJUST_REASON_MAX = 100;
 
 /** What a hybrid undo can take back: a player's move, or the host's last deal. */

@@ -11,10 +11,13 @@
  *
  * Host: away for `HOST_FAILOVER_MS`, the role goes to the longest-seated connected player, paused
  * or not. With nobody to take it the host stays until somebody can. It does not come back by itself
- * when the old host returns.
+ * when the old host returns. Somebody the host is removing is only chosen when there is nobody
+ * else, and then the removal is called off: the room is never left with nobody to run it.
  */
 import { DEFAULT_SEAT_HOLD_MINUTES, HOST_FAILOVER_MS } from '@felt/protocol';
+import { beingRemoved, removalSettled } from './ending';
 import { running } from './game';
+import { syncClock } from './turnClock';
 import { transfer } from './hostControls';
 import type { RoomRecord } from './roomStore';
 import { vacate } from './seating';
@@ -126,13 +129,14 @@ function releasable(room: Readonly<RoomRecord>, isConnected: IsConnected) {
  * were taken (`sit` appends; nothing reorders them), so that is the first one that qualifies.
  */
 export function successor(room: Readonly<RoomRecord>, isConnected: IsConnected): string | null {
-  const seat = room.seats.find(
+  const able = room.seats.filter(
     (s) =>
       !s.leaving &&
       s.userId !== room.hostId &&
       room.admitted.includes(s.userId) &&
       isConnected(s.userId),
   );
+  const seat = able.find((s) => !beingRemoved(room, s.userId)) ?? able[0];
   return seat?.userId ?? null;
 }
 
@@ -163,7 +167,10 @@ export function applyAbsence(
   let next = trackAbsence(room, isConnected, now);
   const failover = failoverAt(next, isConnected);
   if (failover !== null && failover <= now) {
-    const r = transfer(next, next.hostId, successor(next, isConnected)!, true);
+    const heir = successor(next, isConnected)!;
+    // A removal called off also takes away the clock it put on their turn.
+    const kept = syncClock(removalSettled(next, heir), now);
+    const r = transfer(kept, next.hostId, heir, true);
     if (!r.refused) next = r.room;
   }
   for (const { userId, at } of releasable(next, isConnected)) {

@@ -49,6 +49,8 @@ export const PublicSeatSchema = z
     muted: z.boolean(),
     /** Left while their cards stay in play: the seat is cashed out when the hand ends. */
     leaving: z.boolean(),
+    /** Why they are sitting out, when it was not their choice; absent otherwise. */
+    sitOutReason: z.literal('timeouts').optional(),
     /**
      * What leaving now would do to the cards in the running hand; null without any (not dealt in,
      * folded, hand over, or already leaving). `returned` is what a fold would put back on their stack
@@ -262,6 +264,13 @@ export const PublicRoomStateSchema = z
       .strict()
       .optional(),
     paused: z.boolean(),
+    /** The host ended the game during a hand: it ends after that hand. Absent otherwise. */
+    ending: z.literal(true).optional(),
+    /**
+     * Being removed by the host: they play the running hand to its end and are then removed and
+     * cashed out. By user, as they may have given up their seat meanwhile. Absent when nobody is.
+     */
+    removals: z.array(UserIdSchema).min(1).max(MAX_SEATS).optional(),
     /** Oldest first, the last `ROOM_LOG_LIMIT` entries. */
     log: z.array(RoomLogEntrySchema).max(ROOM_LOG_LIMIT),
   })

@@ -407,6 +407,12 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 
 ## Stage D review (2026-11-28)
 - _Opus review of Stage D: no card leak, chip error or RoomActor break; ready for a game night with caveats. Nothing from it has been fixed yet. New: (1) the host removing a live opponent mid-hand forfeits that player's matched chips to the pot, which heads-up goes to the host; (2) no network grace at the turn deadline, so a last-moment Call can become a fold plus a strike; (3) production accepts an http SUPABASE_URL (with an https JWKS URL and no API URL), sending the service-role key over http. Rated more serious than before: ending the game mid-hand lets an online host cancel a hand they are losing. Suggested order: host kick and end-game, grace period after a restart, "sat out by the timer" notice, server time on the wire._
+- _Fixed (GO on round 2): host removal and end-game wait for the hand to finish; 1s turn grace; a fresh 10s clock after a restart; sat-out notice; https required for the service-role key. With the timer off, a pending removal or end puts a 60s clock on the turns concerned (round 1 found an idle player could otherwise freeze the table). Open: removed players do not see the run-out; in hybrid the host (or disputes) can still hold a pending end open; undoing a forced timeout gives a fresh 60s._
+
+---
+
+## Stage D review fixes (owner-approved)
+- _Replaces the Stage C owner decision that ending mid-hand cancels and refunds: `host:end` during a hand now lets it finish (no next hand, "Game ends after this hand"), and `host:kick` of a player still in the hand takes effect when it ends. Also: 1s network grace on the turn deadline, a short new clock for turns that ran out while the server was down, a "sat out after 2 timeouts" notice with I'm back, and https required in production for whichever Supabase URL gets the service-role key. `voidHand` is gone, so an ended game never has a cancelled hand (relevant to P52)._
 
 ---
 

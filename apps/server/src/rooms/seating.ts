@@ -68,6 +68,10 @@ export function sit(
 ): SeatResult {
   const gated = gate(room, who.userId);
   if (gated) return gated;
+  if (room.removals?.includes(who.userId)) {
+    return refuse(room, 'forbidden', 'the host is removing you');
+  }
+  if (room.ending) return refuse(room, 'illegal_action', 'the game ends after this hand');
   const { maxSeats, minBuyIn, maxBuyIn } = room.settings;
   if (room.seats.some((s) => s.userId === who.userId)) {
     return refuse(room, 'already_seated', 'you already have a seat');
@@ -128,8 +132,9 @@ export function setSittingOut(
   // A leaving seat is already sitting out; it cannot be brought back.
   if (mine.leaving) return refuse(room, 'forbidden', 'you are leaving the table');
   // Choosing either way is a sign of life: the run of timeouts starts again.
-  const { timeouts, ...seat } = mine;
+  const { timeouts, sitOutReason, ...seat } = mine;
   void timeouts;
+  void sitOutReason;
   return done({
     ...room,
     seats: room.seats.map((s) => (s === mine ? { ...seat, sittingOut } : s)),

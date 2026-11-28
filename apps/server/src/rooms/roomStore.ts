@@ -85,6 +85,13 @@ export const RoomRecordSchema = z
     sessions: z.record(UserId, z.string().min(1).max(64)).optional(),
     /** `host:seat_hold`; absent means the default. */
     seatHoldMinutes: SeatHoldMinutesSchema.optional(),
+    /**
+     * The host ended the game while a hand was being played: no further hand is dealt and the game
+     * ends once this one is over (ending.ts).
+     */
+    ending: z.boolean().optional(),
+    /** Removed by the host while still in the running hand: it takes effect when the hand ends. */
+    removals: z.array(UserId).optional(),
     /** Join-denial cooldowns: userId -> epoch ms until which the user may not ask again. */
     denied: z.record(UserId, z.number().int()).optional(),
     seats: z.array(
@@ -98,6 +105,8 @@ export const RoomRecordSchema = z
           sittingOut: z.boolean(),
           /** Turns in a row the clock ran out on (P48); absent means none. */
           timeouts: z.number().int().min(0).optional(),
+          /** Why they are sitting out, when it was not their choice. */
+          sitOutReason: z.literal('timeouts').optional(),
           /** Left during a hand their cards are still live in; cashed out when it ends. */
           leaving: z.boolean().optional(),
         })

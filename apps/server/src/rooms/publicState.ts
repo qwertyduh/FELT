@@ -159,6 +159,9 @@ export function toPublicState(
       connected: isConnected(seat.userId),
       muted: false, // P55
       leaving: seat.leaving === true,
+      ...(seat.sittingOut && !seat.leaving && seat.sitOutReason
+        ? { sitOutReason: seat.sitOutReason }
+        : {}),
       onLeave: player && hand && !seat.leaving ? onLeave(hand.state, seat.userId) : null,
     };
   });
@@ -193,6 +196,8 @@ export function toPublicState(
       : {}),
     ...upcomingIncrease(room),
     paused: room.status === 'paused',
+    ...(room.ending ? { ending: true as const } : {}),
+    ...(room.removals?.length ? { removals: [...room.removals] } : {}),
     log: (room.log ?? []).map(toPublicLogEntry),
   };
 }

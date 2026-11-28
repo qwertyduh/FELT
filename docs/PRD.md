@@ -106,6 +106,7 @@ Chips exist only for the length of a game. The host sets a minimum buy-in and ap
   - Requests expire after 2 minutes without an answer.
   - Once admitted, a player can reconnect for the rest of the session without asking again. A kicked player must request again.
 - **Host controls:** start game, pause/resume, admit/deny, kick, approve top-ups, change blinds between hands, transfer host, end game.
+- **The host cannot take a hand away.** Removing a player who is still in the running hand (active or all-in) does not fold them: they finish it, and are then removed and cashed out. A player who has folded or is not in the hand is removed at once. Ending the game during a hand lets it finish (no new hand, nothing refunded) and tells everyone "Game ends after this hand"; between hands or in the lobby it ends at once. With the turn timer off, so that nobody can hold this up by never acting, a removed player's turns (and, once ending, every turn) get a 60s countdown, then check or fold, with no sit-out.
 - If the host disconnects for more than 2 minutes, the host role transfers to the longest-seated connected player.
 - New players can be admitted mid-session and are dealt in from the next hand.
 
@@ -124,7 +125,7 @@ Chips exist only for the length of a game. The host sets a minimum buy-in and ap
 - Actions: fold, check, call, bet/raise (with min-raise rules), all-in.
 - Side pots are computed automatically, and tied hands split the pot.
 - Showdown reveals cards in the correct order, and losing players may muck.
-- Turn timer: on expiry the player auto-checks if possible, otherwise auto-folds. Two consecutive timeouts sit the player out.
+- Turn timer: on expiry the player auto-checks if possible, otherwise auto-folds. A move arriving up to about 1s late still counts. Two consecutive timeouts sit the player out, and their screen says so with an **I'm back** button. A turn that ran out while the server was down does not count: the player gets a short new clock.
 - End-of-hand summary: winner(s), winning hand name, pot(s) awarded.
 
 ### 5.5 Hybrid mode (betting only)

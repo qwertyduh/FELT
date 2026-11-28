@@ -3,7 +3,8 @@
  * or how long a dropped player's seat is held (P45), remove a player, hand over the
  * room, end the game. A button in the page header (so nothing on the table moves for it) opens a
  * sheet over the bottom of the screen (`data-cover`: nothing under it takes a tap). Removing,
- * handing over and ending each take a second, named step.
+ * handing over and ending each take a second, named step, which says what will really happen: a
+ * player still in the hand, or a game with a hand being played, goes only when that hand is over.
  *
  * The people listed are the server's `host:members`: everyone admitted, seated or not.
  *
@@ -16,6 +17,7 @@ import { createPortal } from 'react-dom';
 import {
   BLIND_MULTIPLIERS,
   DEFAULT_SEAT_HOLD_MINUTES,
+  FORCED_TURN_SECONDS,
   MAX_BLIND_INCREASE_MINUTES,
   MAX_CHIPS,
   type BlindIncreasePatch,
@@ -279,15 +281,18 @@ function Sheet({
       return {
         userId: m.userId,
         username: m.username ?? `Player ${m.userId.slice(0, 4)}`,
-        note: m.leaving
-          ? 'leaving'
-          : !m.seated
-            ? 'not seated'
-            : seat && !seat.connected
-              ? 'away'
-              : null,
+        removing: m.removing === true,
+        note: m.removing
+          ? 'removed after this hand'
+          : m.leaving
+            ? 'leaving'
+            : !m.seated
+              ? 'not seated'
+              : seat && !seat.connected
+                ? 'away'
+                : null,
         /** The host can only hand over to a seat that is staying. */
-        canHost: m.seated && !m.leaving,
+        canHost: m.seated && !m.leaving && !m.removing,
         connected: seat?.connected ?? false,
       };
     });
@@ -295,10 +300,17 @@ function Sheet({
     view.name === 'kick' || view.name === 'transfer'
       ? (others.find((s) => s.userId === view.userId) ?? null)
       : null;
-  // The chosen player has gone (or can no longer host): there is nothing left to confirm.
-  if ((view.name === 'kick' && !target) || (view.name === 'transfer' && !target?.canHost)) {
+  // From the real state: during an all-in run-out the hand is already over.
+  const hand = room.hand !== null && room.hand.street !== 'ended';
+  const ending = room.ending === true;
+  // The chosen player has gone (or can no longer be removed or host): nothing left to confirm.
+  if (
+    (view.name === 'kick' && (!target || target.removing)) ||
+    (view.name === 'transfer' && !target?.canHost)
+  ) {
     setView({ name: 'menu' });
   }
+  if (view.name === 'end' && ending && hand) setView({ name: 'menu' });
 
   const open = (next: View) => {
     setError(null);
@@ -316,7 +328,6 @@ function Sheet({
     setError(hostFailure(res.error, event));
   }
 
-  const hand = room.hand && room.hand.street !== 'ended';
   const fate = view.name === 'kick' && target ? kickFate(room, target.userId, resultPending) : '';
   const started = room.status === 'playing' || room.status === 'paused';
   const paused = room.status === 'paused';
@@ -340,7 +351,7 @@ function Sheet({
         <>
           <h2 className="text-center text-lg font-semibold text-cream">Host controls</h2>
           <div className="grid grid-cols-2 gap-2">
-            {started && (
+            {started && !ending && (
               <button
                 key={paused ? 'resume' : 'pause'}
                 type="button"
@@ -353,18 +364,26 @@ function Sheet({
                 {paused ? 'Resume game' : 'Pause game'}
               </button>
             )}
-            <button type="button" className={OUTLINE} onClick={() => open({ name: 'blinds' })}>
-              Change blinds
-            </button>
-            <button type="button" className={OUTLINE} onClick={() => open({ name: 'increase' })}>
-              Blind timer:{' '}
-              {room.settings.blindIncreaseMinutes === null
-                ? 'off'
-                : `${room.settings.blindIncreaseMinutes}\u00a0min`}
-            </button>
+            {!ending && (
+              <>
+                <button type="button" className={OUTLINE} onClick={() => open({ name: 'blinds' })}>
+                  Change blinds
+                </button>
+                <button
+                  type="button"
+                  className={OUTLINE}
+                  onClick={() => open({ name: 'increase' })}
+                >
+                  Blind timer:{' '}
+                  {room.settings.blindIncreaseMinutes === null
+                    ? 'off'
+                    : `${room.settings.blindIncreaseMinutes}\u00a0min`}
+                </button>
+              </>
+            )}
             <button
               type="button"
-              className={`${OUTLINE} ${started ? '' : 'col-span-2'}`}
+              className={`${OUTLINE} ${started && !ending ? '' : 'col-span-2'}`}
               onClick={() => open({ name: 'hold' })}
             >
               Seat hold: {holdMinutes} min
@@ -397,7 +416,12 @@ function Sheet({
                     type="button"
                     aria-label={`Remove ${s.username}`}
                     className={`${DANGER} shrink-0 text-sm`}
-                    {...tap(`kick:${s.userId}`, () => open({ name: 'kick', userId: s.userId }))}
+                    {...(() => {
+                      const props = tap(`kick:${s.userId}`, () =>
+                        open({ name: 'kick', userId: s.userId }),
+                      );
+                      return { ...props, disabled: props.disabled || s.removing };
+                    })()}
                   >
                     Remove
                   </button>
@@ -405,13 +429,19 @@ function Sheet({
               ))}
             </ul>
           )}
-          <button
-            type="button"
-            className={`${DANGER} ${ROW}`}
-            {...tap('end', () => open({ name: 'end' }))}
-          >
-            End game
-          </button>
+          {ending && hand ? (
+            <p role="status" className="shrink-0 py-2 text-center text-base text-cream">
+              Game ends after this hand
+            </p>
+          ) : (
+            <button
+              type="button"
+              className={`${DANGER} ${ROW}`}
+              {...tap('end', () => open({ name: 'end' }))}
+            >
+              End game
+            </button>
+          )}
           <button type="button" className={`${OUTLINE} ${ROW}`} onClick={onClose}>
             Close
           </button>
@@ -503,12 +533,21 @@ function Sheet({
       )}
       {view.name === 'end' && (
         <Confirm
-          title="End the game for everyone?"
+          title={hand ? 'End the game after this hand?' : 'End the game for everyone?'}
           detail={`This can't be undone.${
-            hand ? ' The hand in play is cancelled: everyone gets back what they put in.' : ''
+            hand
+              ? ` The hand in play is finished first and nobody is refunded. No new hand is dealt.${
+                  room.paused ? ' The game resumes so it can be finished.' : ''
+                }${
+                  room.settings.turnTimerSeconds === null
+                    ? ` The turn timer is off, so every turn now gets ${FORCED_TURN_SECONDS} seconds, then checks or folds.`
+                    : ''
+                }`
+              : ''
           }`}
-          yes="End game now"
-          id="yes-end"
+          yes={hand ? 'End after this hand' : 'End game now'}
+          // Held again if what it would do changes.
+          id={`yes-end:${hand ? 'after' : 'now'}`}
           tap={tap}
           busy={busy}
           onBack={back}

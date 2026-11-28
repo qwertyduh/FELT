@@ -13,11 +13,11 @@ import {
 } from '@felt/protocol';
 import { heldAgain } from './absence';
 import { freezeClock, restartClock, thawClock } from './blinds';
+import { beingRemoved, endNow, removeMember } from './ending';
 import { leave, NEXT_HAND_DELAY_MS, nextHandDelay, running } from './game';
-import type { GameHand } from './gameSchema';
 import type { RoomRecord } from './roomStore';
-import { freezeTurn, thawTurn } from './turnClock';
-import { vacate, type SeatResult } from './seating';
+import { freezeTurn, syncClock, thawTurn } from './turnClock';
+import type { SeatResult } from './seating';
 import { dropTopUps } from './topUps';
 
 const done = (room: Readonly<RoomRecord>): SeatResult => ({
@@ -38,6 +38,10 @@ function gate(room: Readonly<RoomRecord>, userId: string): SeatResult | null {
   return null;
 }
 
+/** For what only a next hand could use, or could hold this one open for good. */
+const noNextHand = (room: Readonly<RoomRecord>): SeatResult | null =>
+  room.ending ? refuse(room, 'illegal_action', 'the game ends after this hand') : null;
+
 /**
  * `host:pause`. What is left of the turn clock is kept. The other stored deadlines (award window,
  * next hand) stay as they are but are ignored while paused (`nextDeadline`), also after a restart. Every move, deal, award, dispute, undo,
@@ -45,7 +49,7 @@ function gate(room: Readonly<RoomRecord>, userId: string): SeatResult | null {
  * other host controls go on working.
  */
 export function pause(room: Readonly<RoomRecord>, userId: string, now: number): SeatResult {
-  const gated = gate(room, userId);
+  const gated = gate(room, userId) ?? noNextHand(room);
   if (gated) return gated;
   if (room.status === 'paused') return done(room);
   if (room.status !== 'playing') return refuse(room, 'illegal_action', 'the game has not started');
@@ -109,9 +113,12 @@ export function changeSeatHold(
 }
 
 /**
- * `host:kick`. First everything `room:leave` does (fold or keep live cards, cash out on the
- * ledger, drop top-ups), with the undo history emptied, then the admission goes. Coming back takes
- * a new join request (PRD 5.2), and the seating rules for a returning player apply to the chips.
+ * `host:kick`. A player still contesting the running hand (active or all-in) is not folded: the
+ * removal waits, they play the hand out, and they are removed and cashed out when it ends
+ * (`finishHand` in game.ts). Anyone else goes at once: first everything `room:leave` does (cash
+ * out on the ledger, drop top-ups), with the undo history emptied, then the admission goes. Coming
+ * back takes a new join request (PRD 5.2), and the seating rules for a returning player apply to
+ * the chips.
  */
 export function kick(
   room: Readonly<RoomRecord>,
@@ -125,6 +132,19 @@ export function kick(
   if (!room.admitted.includes(targetId)) {
     return refuse(room, 'not_found', 'that player is not in the room');
   }
+  const inPlay = running(room);
+  const player =
+    inPlay && !inPlay.departed.includes(targetId)
+      ? inPlay.state.players.find((p) => p.playerId === targetId)
+      : undefined;
+  if (player && player.status !== 'folded' && room.seats.some((s) => s.userId === targetId)) {
+    if (beingRemoved(room, targetId)) return done(room);
+    const marked = {
+      ...dropTopUps(room, targetId),
+      removals: [...(room.removals ?? []), targetId],
+    };
+    return done(syncClock(marked, now));
+  }
   let next = room as RoomRecord;
   if (room.seats.some((s) => s.userId === targetId)) {
     const left = leave(room, targetId, now);
@@ -135,17 +155,7 @@ export function kick(
   if (hand?.undo?.length) {
     next = { ...next, game: { ...next.game!, hand: { ...hand, undo: [] } } };
   }
-  next = dropTopUps(next, targetId);
-  const { [targetId]: session, ...sessions } = next.sessions ?? {};
-  if (session !== undefined) next = { ...next, sessions };
-  const { [targetId]: mark, ...away } = next.away ?? {};
-  if (mark !== undefined) next = { ...next, away };
-  return done({
-    ...next,
-    admitted: next.admitted.filter((id) => id !== targetId),
-    requests: next.requests.filter((r) => r.userId !== targetId),
-    kicked: [...(next.kicked ?? []).filter((id) => id !== targetId), targetId],
-  });
+  return done(removeMember(next, targetId, now));
 }
 
 /**
@@ -166,6 +176,9 @@ export function transfer(
     return refuse(room, 'not_seated', 'the new host must have a seat');
   }
   if (!connected) return refuse(room, 'illegal_action', 'that player is not connected');
+  if (beingRemoved(room, targetId)) {
+    return refuse(room, 'illegal_action', 'that player is being removed');
+  }
   return done({
     ...room,
     // The old host is a member now, and may have no seat to be named by.
@@ -186,7 +199,7 @@ export function changeBlinds(
   patch: HostSettingsPatch,
   now: number,
 ): SeatResult {
-  const gated = gate(room, userId);
+  const gated = gate(room, userId) ?? noNextHand(room);
   if (gated) return gated;
   const set = setBlinds(room, patch);
   return done(set === room ? room : restartClock(set, now));
@@ -203,7 +216,7 @@ export function changeBlindIncrease(
   { minutes, multiplier }: BlindIncreasePatch,
   now: number,
 ): SeatResult {
-  const gated = gate(room, userId);
+  const gated = gate(room, userId) ?? noNextHand(room);
   if (gated) return gated;
   const { blindIncreaseMinutes, blindIncreaseMultiplier } = room.settings;
   if (minutes === blindIncreaseMinutes && multiplier === blindIncreaseMultiplier) {
@@ -237,47 +250,20 @@ function setBlinds(
 }
 
 /**
- * Cancel the hand in play: everyone gets back what they put into it, so it is as if it was never
- * dealt (no `hand_result` lines). Chips owed to a player who had already left follow them: onto
- * their new seat, or else another `cash_out` line.
- */
-function voidHand(room: Readonly<RoomRecord>, hand: GameHand, now: number): RoomRecord {
-  let { seats } = room;
-  const lines: RoomRecord['ledger'] = [];
-  for (const p of hand.state.players) {
-    const gone = hand.departed.includes(p.playerId);
-    const seat = seats.find((s) => s.userId === p.playerId);
-    // A player who left has their stack already: only what is in the pot is still theirs.
-    const stack = gone ? (seat?.stack ?? 0) + p.committed : p.stack + p.committed;
-    if (seat) seats = seats.map((s) => (s === seat ? { ...s, stack } : s));
-    else if (p.committed > 0) {
-      lines.push({ t: now, userId: p.playerId, kind: 'cash_out', amount: p.committed });
-    }
-  }
-  return { ...room, seats, ledger: [...room.ledger, ...lines] };
-}
-
-/**
- * `host:end`. The hand in play (if any) is cancelled, players who were leaving are cashed out, and
- * everything still waiting (join and top-up requests, queued top-ups, new blinds, the blind
- * countdown) is dropped.
- * Seats keep their final stacks: with the ledger they are what the recap is built from.
+ * `host:end`. With no hand being played the game ends at once. Otherwise the hand is played to its
+ * end and nobody is refunded: no further hand is dealt and the game ends once the result has been
+ * on the table for the usual pause (`tick` in game.ts). So that this cannot be held open, a paused
+ * game resumes and cannot be paused again, and with the timer off every turn is clocked from now;
+ * top-ups and new blinds, which only a next hand could use, are dropped now.
  */
 export function end(room: Readonly<RoomRecord>, userId: string, now: number): SeatResult {
   const gated = gate(room, userId);
   if (gated) return gated;
-  const hand = running(room);
-  let next = hand ? voidHand(room, hand, now) : (room as RoomRecord);
-  for (const seat of next.seats.filter((s) => s.leaving)) next = vacate(next, seat.userId, now);
-  const { nextBlinds, blindClock, game, ...rest } = next;
+  if (!running(room)) return done(endNow(room, now));
+  if (room.ending) return done(room);
+  const going = room.status === 'paused' ? resume(room, userId, now).room : (room as RoomRecord);
+  const { nextBlinds, blindClock, ...rest } = going;
   void nextBlinds;
   void blindClock;
-  return done({
-    ...rest,
-    status: 'ended',
-    requests: [],
-    topUpRequests: [],
-    pendingTopUps: [],
-    ...(game ? { game: { button: game.button, hand: null, nextHandAt: null } } : {}),
-  });
+  return done(syncClock({ ...rest, ending: true, topUpRequests: [], pendingTopUps: [] }, now));
 }

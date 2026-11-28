@@ -450,10 +450,14 @@ export function TableSummary({
   const money = (n: number) => shortChips(n, 10_000_000);
   const timer = ready ? turnTimer(room) : null;
   const { hand } = room;
+  /** Turns here have a clock: the room's timer, or one put on for a pending removal or end. */
+  const timed = room.settings.turnTimerSeconds !== null || room.ending === true || timer !== null;
   /** An online hand has ended: the result banner is up. */
   const resulted = room.settings.mode === 'online' && hand?.outcome !== undefined;
   /** The banner says it better: these words give up their room. */
-  const quiet = resulted && (line === 'Hand over' || line === 'Dealing…');
+  // Also once play has stopped: the words below the figures say why.
+  const stopped = ready && room.status === 'playing' && hand === null;
+  const quiet = stopped || (resulted && (line === 'Hand over' || line === 'Dealing…'));
   const holding =
     room.settings.mode === 'online' && hand && me && me.handStatus !== null ? hand : null;
   const words = (
@@ -500,7 +504,7 @@ export function TableSummary({
       {/* A timed room keeps the ring's height, so nothing shifts from turn to turn. */}
       <div
         className={`flex items-center justify-center gap-2 ${
-          room.settings.turnTimerSeconds === null || resulted ? '' : 'min-h-9'
+          !timed || resulted || stopped ? '' : 'min-h-9'
         }`}
       >
         {words}

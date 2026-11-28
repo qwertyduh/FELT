@@ -53,6 +53,11 @@ export function requestTopUp(
   const seat = room.seats.find((s) => s.userId === userId);
   if (!seat) return refuse(room, 'not_seated', 'you are not seated');
   if (seat.leaving) return refuse(room, 'forbidden', 'you are leaving the table');
+  if (room.removals?.includes(userId)) {
+    return refuse(room, 'forbidden', 'the host is removing you');
+  }
+  // No further hand will be dealt, so the chips could never arrive.
+  if (room.ending) return refuse(room, 'illegal_action', 'the game ends after this hand');
   if (room.topUpRequests?.some((r) => r.userId === userId)) {
     return refuse(room, 'already_requested', 'a top-up request is already waiting for the host');
   }

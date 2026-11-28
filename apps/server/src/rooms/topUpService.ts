@@ -70,12 +70,13 @@ export class TopUpService {
       this.to(code, userId).emit('player:topup_status', { pending: ownTopUp(room, userId) });
     }
     // An approved amount that left the queue without reaching the ledger was over the maximum
-    // (a player who left is not told: it went with their seat; ending the game clears the queue).
-    if (room.status === 'ended') return;
+    // (a player who left is not told: it went with their seat; ending the game, or removing the
+    // player, clears the queue, also while the hand is still being finished).
+    if (room.status === 'ended' || room.ending) return;
     for (const { requestId, userId, amount } of before.pendingTopUps ?? []) {
       if (room.pendingTopUps?.some((r) => r.requestId === requestId)) continue;
       const seat = room.seats.find((s) => s.userId === userId);
-      if (!seat || seat.leaving) continue;
+      if (!seat || seat.leaving || room.removals?.includes(userId)) continue;
       if (room.ledger.some((e) => e.kind === 'top_up' && e.note === requestId)) continue;
       this.to(code, userId).emit('player:topup_decision', {
         requestId,

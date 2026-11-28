@@ -3,8 +3,8 @@
  * (rooms/seating.ts and `leave` in rooms/game.ts).
  *
  * Every sentence must stay true whatever happens afterwards. Chips can still follow a player who
- * has left (money nobody still in the hand covers, or a cancelled hand), so amounts are only ever
- * "now" or "at least", never final. rooms/leaveSheet.test.ts plays hands out against each one.
+ * has left (money nobody still in the hand covers), so amounts are only ever "now" or "at least",
+ * never final. rooms/leaveSheet.test.ts plays hands out against each one.
  */
 import type { PublicRoomState, PublicSeat } from '@felt/protocol';
 import { chips } from './seating';
@@ -17,6 +17,7 @@ export function leaveLines(
 ): string[] {
   const lines: string[] = [];
   const cards = me.onLeave;
+  const removing = room.removals?.includes(me.userId) ?? false;
   const handLive = room.hand !== null && room.hand.street !== 'ended';
 
   if (room.status === 'lobby') {
@@ -50,13 +51,15 @@ export function leaveLines(
       if (handLive) {
         lines.push(
           'Chips you put into this hand are not refunded, except any that no player still in the hand ends up matching: those can come back to you.',
-          'If the host ends the game during this hand, it is cancelled and what you put in comes back.',
         );
       }
     }
-    lines.push(
-      'To sit again you must bring back your whole cash out as it stands then. If that is 0, you sit with 0 and use Buy more.',
-    );
+    // Neither a game that is ending nor a table you are being removed from can be sat at again.
+    if (!room.ending && !removing) {
+      lines.push(
+        'To sit again you must bring back your whole cash out as it stands then. If that is 0, you sit with 0 and use Buy more.',
+      );
+    }
   }
 
   if (topUp.approved !== null) {
@@ -70,6 +73,11 @@ export function leaveLines(
         ? 'The game is paused. Your seat stays until this hand ends.'
         : 'The game is paused, but leaving takes effect now.',
     );
+  }
+  if (room.ending) lines.push('The game ends after this hand.');
+  if (removing) {
+    lines.push('The host is removing you from the room when this hand ends.');
+    return lines;
   }
   lines.push(
     room.hostId === me.userId

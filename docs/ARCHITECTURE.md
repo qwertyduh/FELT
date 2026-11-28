@@ -135,7 +135,8 @@ Test priorities: side pots with 3+ all-ins, split pots, min-raise edge cases, he
 
 ### Room state (beyond the engine's HandState)
 - `settings`: mode, minBuyIn, maxBuyIn?, blinds, maxSeats, timer, blindIncrease (minutes or off, multiplier)
-- Turn clock (`rooms/turnClock.ts`): `hand.turnDeadline` (absolute epoch ms) while the room has a timer and somebody is on turn; `turnLeftMs` while paused. Each new turn gets a full clock (another player leaving does not extend the current one). On expiry the player checks if free, else folds, as a queued actor task that reads the deadline as it is then, so a stale timer does nothing. An intent arriving after the deadline loses to it. `seats[].timeouts` counts turns run out in a row: two sit the player out from the next hand; acting in time, `room:sit_out` or `room:sit_in` clears it. Hybrid: a timeout can be undone (with its strike and sit-out). A deadline that passed while the server was down applies once, when the room is next loaded
+- Turn clock (`rooms/turnClock.ts`): `hand.turnDeadline` (absolute epoch ms) while the room has a timer and somebody is on turn; `turnLeftMs` while paused. Each new turn gets a full clock (another player leaving does not extend the current one). A turn runs out 1s after its deadline (network grace): the player then checks if free, else folds, as a queued actor task that reads the deadline as it is then, so a stale timer does nothing. A `game:act` is judged by when it arrived, so one arriving within the grace wins. `seats[].timeouts` counts turns run out in a row: two sit the player out from the next hand; acting in time, `room:sit_out` or `room:sit_in` clears it. `seats[].sitOutReason: 'timeouts'` (public) says why. Hybrid: a timeout can be undone (with its strike and sit-out). A deadline that passed while the server was down neither folds nor strikes: the first load by that server process gives a fresh clock of 10s (or the timer if shorter). Later reloads while the process runs give none
+- `ending` / `removals` (`rooms/ending.ts`): a game ended, or players removed, during a hand. Both take effect when the hand ends; a pending end then waits the usual next-deal delay and ends instead of dealing. While ending there is no pause, new blinds, sit or top-up. With the timer off, `turnClock` still puts a 60s clock (`FORCED_TURN_SECONDS`) on a removed player's turns and, once ending, on every turn (no strikes; dropped if a removal is called off). `room:state.removals` lists who is being removed, seated or not
 - `blindClock`: absolute deadline of the next blind increase (frozen while paused). It needs no timer: the next hand dealt after it takes one level (rounded up, capped at the chip maximum) and starts a full countdown
 - `hostId`
 - `admitted`: set of userIds allowed in this session
@@ -248,10 +249,10 @@ Defined once in `packages/protocol` (types + Zod). Client → server events use 
 | `player:topup_request` | `{ amount }` | Seated player (the host too); one outstanding per player; `stack + amount ≤ maxBuyIn`, checked again at approval and when applied |
 | `host:admit` | `{ requestId, approve }` | Host |
 | `host:topup` | `{ requestId, approve }` | Host |
-| `host:start` / `host:pause` / `host:resume` / `host:end` | — | Host. While paused, moves, deals, awards, disputes, undo, stack fixes and start are refused (`room_paused`); resume keeps what was left of the turn (at least 5s, or the whole timer if shorter) and restarts the other waiting deadlines in full. End cancels a running hand (everyone gets back what they put in) and drops all requests and queued top-ups |
+| `host:start` / `host:pause` / `host:resume` / `host:end` | — | Host. While paused, moves, deals, awards, disputes, undo, stack fixes and start are refused (`room_paused`); resume keeps what was left of the turn (at least 5s, or the whole timer if shorter) and restarts the other waiting deadlines in full. End with no hand running ends at once and drops all requests and queued top-ups. During a hand it only marks the room `ending` (resuming it if paused): the hand is played out, nothing is refunded and the game ends after it |
 | `host:settings` | `{ smallBlind, bigBlind }` (applied next hand; restarts the blind increase countdown) | Host |
 | `host:blind_increase` | `{ minutes, multiplier }` (`minutes` 1–240 or null = off; multiplier 1.5 or 2) | Host |
-| `host:kick` | `{ userId }`. Does what `room:leave` does, then removes admission | Host |
+| `host:kick` | `{ userId }`. A player still in the running hand (not folded) is marked for removal: they play it out and are removed and cashed out when it ends. Anyone else: what `room:leave` does, then admission is removed, at once | Host |
 | `host:transfer` | `{ userId }` (seated and connected) | Host |
 | `host:mute` | `{ userId, muted }` | Host |
 | `host:seat_hold` | `{ minutes }` (1–30, default 3; applies to later disconnects) | Host |
@@ -280,7 +281,7 @@ Web and server deploy separately and open tabs keep old bundles.
 | `room:join_pending` | `{ requestId, expiresAt }` | Requester |
 | `room:join_decision` | `{ approved, retryAfter?, ended? }` | Requester |
 | `room:kicked` | `{ code }` | A removed player's sockets (also on `room:enter` until they ask again) |
-| `host:members` | `{ members: [{ userId, username, seated, leaving }] }` (everyone admitted; empty to a host who handed over) | Host |
+| `host:members` | `{ members: [{ userId, username, seated, leaving, removing? }] }` (everyone admitted; empty to a host who handed over) | Host |
 | `room:displaced` | `{ code }` | A socket whose user opened the room elsewhere; the client stops reconnecting |
 | `host:join_request` | `{ requestId, userId, username }` | Host |
 | `host:topup_request` | `{ requestId, userId, amount }` | Host |

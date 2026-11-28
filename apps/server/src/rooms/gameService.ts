@@ -1,7 +1,7 @@
 /**
  * Hand lifecycle (P33): `host:start`, `game:act`, `host:advance_street`, `host:award`,
  * `host:dispute`, `host:undo`, `host:adjust_stack` (P42), `host:force_fold` (P45), `hand:show`
- * (P47), `turn:start` and turn expiry (P48), the deadlines stored in the room, `hand:private` and `hand:result`. The rules (game.ts)
+ * (P47), `turn:start`, turn expiry and its grace after a restart (P48), the deadlines stored in the room, `hand:private` and `hand:result`. The rules (game.ts)
  * run inside the room's actor queue; this file only wires sockets and timers to them.
  */
 import { randomUUID } from 'node:crypto';
@@ -31,6 +31,7 @@ import {
 } from './game';
 import { privateHandOf, publicAwards, shownHands } from './reveal';
 import { RoomGoneError, type RoomRecord } from './roomStore';
+import { afterRestart } from './turnClock';
 import type { RoomRegistry } from './roomRegistry';
 
 export const DEADLINE_RETRY_MS = 5_000;
@@ -102,6 +103,21 @@ export class GameService {
   private readonly newId: () => string;
   private readonly armed = new Map<RoomCode, { at: number; handle: unknown }>();
   private closed = false;
+  /**
+   * Rooms whose clocks this process has been running. A room not in here is being taken up after
+   * a start of the server; one that is has had its timers all along, so loading it again gives
+   * nobody a new clock.
+   */
+  private readonly known = new Set<RoomCode>();
+  /**
+   * The new clock given to a turn after a start of the server. It is only in memory until the room
+   * is next saved, and a save can fail: a reload that still finds the old deadline gets the same
+   * new one again (never a later one).
+   */
+  private readonly regranted = new Map<
+    RoomCode,
+    { handId: string; stale: number; deadline: number }
+  >();
 
   constructor(deps: GameServiceDeps) {
     this.io = deps.io;
@@ -168,6 +184,7 @@ export class GameService {
 
   /** After every committed change (the actor's `onCommit`, after the state broadcast). */
   committed(room: Readonly<RoomRecord>, before: Readonly<RoomRecord>): void {
+    this.known.add(room.code);
     this.arm(room.code, nextDeadline(room));
     // A hand just dealt: each player's cards to their own sockets only, after the state.
     const hand = room.game?.hand;
@@ -186,8 +203,32 @@ export class GameService {
     if (result) this.io.to(roomChannel(room.code)).emit('hand:result', result);
   }
 
-  /** A room was rehydrated: its stored deadlines still apply, overdue ones at once. */
+  /** The stored room as it is to be loaded (see `afterRestart`). */
+  rehydrate(room: RoomRecord): RoomRecord {
+    const hand = room.game?.hand;
+    const given = this.regranted.get(room.code);
+    if (hand && given && hand.handId === given.handId && hand.turnDeadline === given.stale) {
+      const turnDeadline = given.deadline;
+      return { ...room, game: { ...room.game!, hand: { ...hand, turnDeadline } } };
+    }
+    if (this.known.has(room.code)) return room;
+    const next = afterRestart(room, this.timers.now());
+    if (next !== room) {
+      this.regranted.set(room.code, {
+        handId: hand!.handId,
+        stale: hand!.turnDeadline!,
+        deadline: next.game!.hand!.turnDeadline!,
+      });
+    }
+    return next;
+  }
+
+  /**
+   * A room was rehydrated: its stored deadlines still apply, overdue ones at once (a turn that ran
+   * out while the server was down has been given a new clock first).
+   */
   loaded(room: Readonly<RoomRecord>): void {
+    this.known.add(room.code);
     this.arm(room.code, nextDeadline(room));
   }
 
@@ -205,6 +246,8 @@ export class GameService {
     const { userId } = socket.data.user;
     const code = socket.data.roomCode;
     if (!code) return errorAck('not_admitted', 'enter the room first');
+    // When it got here: waiting in the queue must not cost a move its turn.
+    const arrivedAt = this.timers.now();
     try {
       const actor = await this.registry.get(code);
       if (!actor) return notFound();
@@ -218,7 +261,9 @@ export class GameService {
         const ctx = this.context();
         // Settle anything overdue first, so an intent never beats a deadline that has passed.
         // Only for admitted users: nobody else may move the room on.
-        const settled = room.admitted.includes(userId) ? tick(room, ctx) : (room as RoomRecord);
+        const settled = room.admitted.includes(userId)
+          ? tick(room, { ...ctx, now: arrivedAt })
+          : (room as RoomRecord);
         const r = rule(settled, userId, ctx);
         return { room: r.room, result: r.refused };
       });

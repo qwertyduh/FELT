@@ -3,7 +3,7 @@
  * room's setting. Display only: the server decides when a turn is over.
  */
 import { useEffect, useState } from 'react';
-import type { PublicRoomState } from '@felt/protocol';
+import { FORCED_TURN_SECONDS, type PublicRoomState } from '@felt/protocol';
 
 export const TICK_MS = 200;
 /** From here on the ring turns red. */
@@ -18,10 +18,13 @@ export interface TurnTimer {
 /** Null when nothing is counting down: no timer, nobody on turn, hand over, paused or ended. */
 export function turnTimer(room: PublicRoomState): TurnTimer | null {
   const { hand, settings } = room;
-  if (room.status !== 'playing' || room.paused || settings.turnTimerSeconds === null) return null;
+  if (room.status !== 'playing' || room.paused) return null;
   if (!hand || hand.street === 'ended' || hand.currentActor === null) return null;
   if (hand.turnDeadline === null) return null;
-  return { deadline: hand.turnDeadline, totalMs: settings.turnTimerSeconds * 1000 };
+  // A deadline with the timer off is the clock the server puts on a turn for a pending removal or
+  // end of the game.
+  const seconds = settings.turnTimerSeconds ?? FORCED_TURN_SECONDS;
+  return { deadline: hand.turnDeadline, totalMs: seconds * 1000 };
 }
 
 /** When the latest deadline was first shown here, so that every ring of a turn agrees. */

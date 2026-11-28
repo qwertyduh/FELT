@@ -113,6 +113,7 @@ export function SeatControls({
   client,
   place,
   held = false,
+  noToggle = false,
 }: {
   room: PublicRoomState;
   me: PublicSeat;
@@ -123,6 +124,8 @@ export function SeatControls({
   place: 'table' | 'map';
   /** An all-in result is not out yet (`useShownRoom`). */
   held?: boolean;
+  /** The sat-out notice (TableNotices) has the "I'm back" button: not shown twice. */
+  noToggle?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const { list, tap } = useGuarded(ready && !busy);
@@ -183,33 +186,37 @@ export function SeatControls({
         </p>
       ) : (
         <>
-          <button
-            key={toggle}
-            type="button"
-            className={`${SMALL} ${width} ${
-              me.sittingOut
-                ? 'border-brass bg-brass text-felt-950'
-                : 'border-felt-700 bg-felt-950 text-brass'
-            }`}
-            {...tap(toggle, () => void send(toggle))}
-          >
-            <span className="whitespace-nowrap">{me.sittingOut ? "I'm back" : 'Sit out'}</span>
-            {error && !open ? (
-              <span role="alert" className="text-[11px] font-normal">
-                Try again
-              </span>
-            ) : (
-              // This hand is played on: say when sitting out starts.
-              place === 'table' &&
-              me.sittingOut &&
-              dealtIn && <span className="text-[11px] font-normal">Out next hand</span>
-            )}
-          </button>
+          {!noToggle && (
+            <button
+              key={toggle}
+              type="button"
+              className={`${SMALL} ${width} ${
+                me.sittingOut
+                  ? 'border-brass bg-brass text-felt-950'
+                  : 'border-felt-700 bg-felt-950 text-brass'
+              }`}
+              {...tap(toggle, () => void send(toggle))}
+            >
+              <span className="whitespace-nowrap">{me.sittingOut ? "I'm back" : 'Sit out'}</span>
+              {error && !open ? (
+                <span role="alert" className="text-[11px] font-normal">
+                  Try again
+                </span>
+              ) : (
+                // This hand is played on: say when sitting out starts.
+                place === 'table' &&
+                me.sittingOut &&
+                dealtIn && <span className="text-[11px] font-normal">Out next hand</span>
+              )}
+            </button>
+          )}
           <button
             type="button"
             aria-label="Leave seat"
             aria-haspopup="dialog"
-            className={`${SMALL} ${width} border-felt-700 bg-felt-950 text-brass`}
+            className={`${SMALL} ${width} border-felt-700 bg-felt-950 text-brass ${
+              noToggle ? 'ml-auto' : ''
+            }`}
             {...tap('open-leave', () => {
               setError(null);
               setOpen(true);

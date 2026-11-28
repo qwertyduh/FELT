@@ -15,8 +15,13 @@
  * the room. `tick` applies whatever is due; it is safe to call at any moment and any number of
  * times.
  *
- * Turn clock (P48, turnClock.ts): every new turn gets a full clock. When it runs out the player
- * checks if they can and folds if not; twice in a row sits them out from the next hand.
+ * Turn clock (P48, turnClock.ts): every new turn gets a full clock. When it runs out (plus a short
+ * network grace) the player checks if they can and folds if not; twice in a row sits them out from
+ * the next hand.
+ *
+ * A game the host ended, or a player the host removed, during a hand takes effect when that hand is
+ * over (ending.ts). With the timer off those turns are still clocked (turnClock.ts), and running
+ * out then counts nothing against the player.
  */
 import { randomInt } from 'node:crypto';
 import {
@@ -45,12 +50,13 @@ import {
   type RoomLogEntry,
 } from '@felt/protocol';
 import { dealBlinds } from './blinds';
+import { endNow, removeMember } from './ending';
 import { UNDO_DEPTH, type Game, type GameHand, type UndoEntry } from './gameSchema';
 import { shownHands } from './reveal';
 import type { RoomRecord } from './roomStore';
 import { leaveSeat, vacate, type SeatResult } from './seating';
 import { applyTopUps, dropTopUps } from './topUps';
-import { TIMEOUTS_TO_SIT_OUT, freshClock, onTheClock } from './turnClock';
+import { TIMEOUTS_TO_SIT_OUT, TURN_GRACE_MS, freshClock, onTheClock } from './turnClock';
 
 export const NEXT_HAND_DELAY_MS = 5_000;
 /** Online, after a showdown: time to read the hands before the next deal. */
@@ -157,6 +163,8 @@ function finishHand(room: Readonly<RoomRecord>, now: number): RoomRecord {
   for (const seat of next.seats.filter((s) => s.leaving)) {
     next = vacate(next, seat.userId, now);
   }
+  // Removals the host asked for during the hand: before another one can be dealt.
+  for (const userId of next.removals ?? []) next = removeMember(next, userId, now);
   return next;
 }
 
@@ -330,7 +338,9 @@ function deal(before: Readonly<RoomRecord>, ctx: GameContext): Result<RoomRecord
 export function nextDeadline(room: Readonly<RoomRecord>): number | null {
   if (room.status !== 'playing' || !room.game) return null;
   const { hand, nextHandAt } = room.game;
-  if (hand && onTheClock(room, hand)) return hand.turnDeadline ?? 0;
+  if (hand && onTheClock(room, hand)) {
+    return hand.turnDeadline === undefined ? 0 : hand.turnDeadline + TURN_GRACE_MS;
+  }
   const confirm = hand?.proposal && !hand.proposal.disputed ? hand.proposal.confirmAt : null;
   const all = [confirm, nextHandAt].filter((t): t is number => t !== null);
   return all.length ? Math.min(...all) : null;
@@ -349,19 +359,28 @@ function timeOut(room: Readonly<RoomRecord>, now: number): RoomRecord {
     // Not expected of a player on turn. Give the turn again rather than retry without end.
     return { ...room, game: { ...room.game!, hand: freshClock(room, hand, now) } };
   }
+  const move = { action, userId: me.playerId } as const;
+  // With the timer off this clock only lets the host's decision take effect: nobody is struck.
+  if (room.settings.turnTimerSeconds === null) {
+    return advanceTo(room, r.value.state, now, { move });
+  }
   const seat = room.seats.find((s) => s.userId === me.playerId)!;
   const strikes = seat.timeouts ?? 0;
   const satOut = !seat.sittingOut && strikes + 1 >= TIMEOUTS_TO_SIT_OUT;
   const struck: RoomRecord = {
     ...room,
     seats: room.seats.map((s) =>
-      s === seat ? { ...s, timeouts: strikes + 1, sittingOut: s.sittingOut || satOut } : s,
+      s === seat
+        ? {
+            ...s,
+            timeouts: strikes + 1,
+            sittingOut: s.sittingOut || satOut,
+            ...(satOut ? { sitOutReason: 'timeouts' as const } : {}),
+          }
+        : s,
     ),
   };
-  return advanceTo(struck, r.value.state, now, {
-    move: { action, userId: me.playerId },
-    timeout: { strikes, satOut },
-  });
+  return advanceTo(struck, r.value.state, now, { move, timeout: { strikes, satOut } });
 }
 
 /**
@@ -390,6 +409,8 @@ export function tick(room: Readonly<RoomRecord>, ctx: GameContext): RoomRecord {
     }
     return advanceTo(room, state, ctx.now);
   }
+  // The hand the host let finish has been seen: now the game ends.
+  if (room.ending) return endNow(room, ctx.now);
   const dealt = deal(room, ctx);
   if (dealt.ok) return dealt.value;
   // Not enough players: stop here until the host starts again.
@@ -432,7 +453,7 @@ function current(
 export function start(room: Readonly<RoomRecord>, userId: string, ctx: GameContext): GameResult {
   const gated = hostGate(room, userId);
   if (gated) return gated;
-  if (running(room) || (room.game?.nextHandAt ?? null) !== null) {
+  if (room.ending || running(room) || (room.game?.nextHandAt ?? null) !== null) {
     return refuse(room, 'illegal_action', 'the game is already running');
   }
   const dealt = deal({ ...room, game: room.game ?? NO_GAME }, ctx);
@@ -647,11 +668,16 @@ export function undo(
   );
   // Taking back a timeout takes back its strike, and the sitting out it caused.
   const { timeout } = entry;
-  const seats = syncStacks(room, restored).map((s) =>
-    timeout && s.userId === entry.move.userId && !s.leaving
-      ? { ...s, timeouts: timeout.strikes, sittingOut: timeout.satOut ? false : s.sittingOut }
-      : s,
-  );
+  const seats = syncStacks(room, restored).map((s) => {
+    if (!timeout || s.userId !== entry.move.userId || s.leaving) return s;
+    const { sitOutReason, ...seat } = s;
+    return {
+      ...seat,
+      timeouts: timeout.strikes,
+      sittingOut: timeout.satOut ? false : s.sittingOut,
+      ...(sitOutReason && !timeout.satOut ? { sitOutReason } : {}),
+    };
+  });
   const next: RoomRecord = {
     ...room,
     seats,

@@ -201,6 +201,7 @@ export function hostMembers(room: Readonly<RoomRecord>): HostMember[] {
         username: seat?.username ?? room.names?.[userId] ?? null,
         seated: seat !== undefined,
         leaving: seat?.leaving === true,
+        ...(room.removals?.includes(userId) ? { removing: true as const } : {}),
       };
     });
 }

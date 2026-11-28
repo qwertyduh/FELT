@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { PublicRoomState } from '@felt/protocol';
 import type { SocketClient } from '../lib/realtime/socketClient';
+import { satOutByClock } from '../lib/satOut';
 import {
   buyInRange,
   chips,
@@ -31,6 +32,7 @@ import { ResultBanner } from './ResultBanner';
 import { SeatControls } from './SeatControls';
 import { SeatMap } from './SeatMap';
 import { Table, TableSummary } from './Table';
+import { TableNotices } from './TableNotices';
 
 /** A Start button that has just appeared or moved may be under a tap meant for something else. */
 export const START_ARM_MS = 600;
@@ -52,6 +54,13 @@ type Client = Pick<SocketClient, 'emitWithAck'>;
 
 const Hint = ({ children }: { children: React.ReactNode }) => (
   <p className="text-center text-base text-cream/75">{children}</p>
+);
+
+/** Small: it shares a short screen with the table, a sat-out notice and the action bar. */
+const Stopped = ({ children }: { children: React.ReactNode }) => (
+  <p data-testid="stopped" className="text-center text-sm leading-tight text-cream">
+    {children}
+  </p>
 );
 
 const Problem = ({ children }: { children: React.ReactNode }) => (
@@ -220,7 +229,9 @@ export function WaitingRoom({
   /** The only amount a returning player may sit with: what they left with (0 if busted). */
   const exact = returning === null ? null : returning.kind === 'exact' ? returning.amount : 0;
   // Not during a run-out: someone cashed out by that hand is told what they must sit back down with.
-  const canSit = !mine && room.status !== 'ended' && !held;
+  // Nor in a game that is ending: no further hand will be dealt.
+  const removing = room.removals?.includes(userId) ?? false;
+  const canSit = !mine && room.status !== 'ended' && !held && !room.ending && !removing;
 
   // The selected seat filled up (or we are seated): the form no longer applies.
   if (selected !== null && !busy && (mine !== null || room.seats[selected] !== null)) {
@@ -275,13 +286,37 @@ export function WaitingRoom({
   const eligible = room.seats.filter(
     (s) => s && !s.sittingOut && (s.stack > 0 || (room.pendingTopUps[s.userId] ?? 0) > 0),
   ).length;
-  // Not started yet, or play stopped for lack of players (the host starts it again).
-  const startable = room.status === 'lobby' || (room.status === 'playing' && room.hand === null);
+  // Play stopped for lack of players: only the host can start it again.
+  const stopped = room.status === 'playing' && room.hand === null && !room.ending;
+  // Not started yet, or stopped.
+  const startable = room.status === 'lobby' || stopped;
 
   const title = started && mine ? 'Game on' : hosting ? "You're hosting" : "You're in";
 
   function status() {
     if (room.status === 'ended') return <Hint>This game has ended.</Hint>;
+    if (stopped) {
+      if (!hosting) {
+        return (
+          <Stopped>
+            {eligible >= 2
+              ? 'Play has stopped. Waiting for the host to tap Start game.'
+              : 'Play has stopped: fewer than 2 players are ready. The host can start again once 2 are.'}
+          </Stopped>
+        );
+      }
+      return eligible >= 2 ? (
+        <>
+          <Stopped>Play has stopped. Tap Start game to deal again.</Stopped>
+          <StartButton ready={ready} client={client} />
+        </>
+      ) : (
+        <Stopped>
+          Play has stopped. Get 2 players ready (back, topped up or seated), then tap Start game
+          here.
+        </Stopped>
+      );
+    }
     if (hosting && startable) {
       return eligible >= 2 ? (
         <StartButton ready={ready} client={client} />
@@ -291,6 +326,8 @@ export function WaitingRoom({
         </Hint>
       );
     }
+    // No seat to offer: the notice above says why.
+    if (!mine && (room.ending || removing)) return null;
     if (started) {
       return mine ? null : <Hint>The game has started. Take a seat to join the next hand.</Hint>;
     }
@@ -315,17 +352,29 @@ export function WaitingRoom({
   const seatControls = (place: 'table' | 'map') =>
     mine &&
     room.status !== 'ended' && (
-      <SeatControls room={room} me={mine} ready={ready} client={client} place={place} held={held} />
+      <SeatControls
+        room={room}
+        me={mine}
+        ready={ready}
+        client={client}
+        place={place}
+        held={held}
+        noToggle={satOutByClock(room, mine)}
+      />
     );
   /** An online hand has ended: its result takes the blinds row's place until the next deal. */
   const result = started && room.settings.mode === 'online' && shown.hand?.outcome !== undefined;
-  /** Paused it can last: on a screen with room to spare the line (and Invite) comes back. */
-  const rowClass = !result
-    ? 'flex'
-    : room.paused
-      ? 'hidden [@media(min-height:640px)]:flex'
-      : 'hidden';
-  const buyMore = mine && room.status !== 'ended' && (
+  /** A notice above or below the figures takes height from the felt. */
+  const noticed =
+    stopped || room.ending === true || removing || (mine !== null && satOutByClock(room, mine));
+  /**
+   * The line gives up its place to a result. Paused it can last: on a screen with room to spare the
+   * line (and Invite) comes back. A notice costs it only on a short screen.
+   */
+  const short = 'hidden [@media(min-height:640px)]:flex';
+  const rowClass = result ? (room.paused && !noticed ? short : 'hidden') : noticed ? short : 'flex';
+  // Chips bought now could never be dealt in a game that is ending, or to a player being removed.
+  const buyMore = mine && room.status !== 'ended' && !room.ending && !removing && (
     <BuyMore
       room={shown}
       me={shownMine!}
@@ -367,6 +416,7 @@ export function WaitingRoom({
 
       {/* In the lobby a steady height, so what is around it moves as little as possible. */}
       <div className={`flex shrink-0 flex-col justify-end gap-2 pt-2 ${started ? '' : 'min-h-18'}`}>
+        <TableNotices room={room} userId={userId} me={mine} ready={ready} client={client} />
         {started && <TableSummary room={shown} userId={userId} ready={ready} action={buyMore} />}
         {notice && <Problem>{notice}</Problem>}
         {selected !== null && canSit ? (

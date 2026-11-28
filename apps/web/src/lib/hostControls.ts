@@ -2,12 +2,17 @@
  * Host controls (P44): how a refusal is worded, and what the confirm step says. The server
  * decides everything.
  */
-import type { ClientEventName, ErrorPayload, PublicRoomState } from '@felt/protocol';
+import {
+  FORCED_TURN_SECONDS,
+  type ClientEventName,
+  type ErrorPayload,
+  type PublicRoomState,
+} from '@felt/protocol';
 import { chips } from './seating';
 
 /**
- * What removing this player does, as the server does it (`handStaysLive` in rooms/game.ts): their
- * cards stay in play when they are all-in, at showdown, or when nothing is left to bet. While an
+ * What removing this player does, as the server does it (`kick` in rooms/hostControls.ts):
+ * somebody still contesting the running hand plays it out first, anyone else goes at once. While an
  * all-in run-out is being dealt (`held`) the real stack is the result, so no figure is named.
  */
 export function kickFate(room: PublicRoomState, userId: string, held = false): string {
@@ -15,22 +20,17 @@ export function kickFate(room: PublicRoomState, userId: string, held = false): s
   if (!seat) return 'They stop seeing the table.';
   if (held) return 'Their chips are cashed out.';
   const { hand } = room;
-  if (
-    !hand ||
-    hand.street === 'ended' ||
-    seat.handStatus === null ||
-    seat.handStatus === 'folded'
-  ) {
-    return `Their ${chips(seat.stack)} chips are cashed out.`;
-  }
-  const betting = room.seats.filter((s) => s?.handStatus === 'active').length;
-  const live =
-    seat.handStatus === 'all_in' ||
-    hand.street === 'showdown' ||
-    (betting < 2 && hand.currentActor === null);
-  return live
-    ? 'Their cards stay in play until the hand ends, then their chips and any winnings are cashed out.'
-    : 'Their hand is folded and the rest of their chips are cashed out.';
+  const contesting =
+    hand !== null &&
+    hand.street !== 'ended' &&
+    seat.handStatus !== null &&
+    seat.handStatus !== 'folded';
+  if (!contesting) return `Their ${chips(seat.stack)} chips are cashed out.`;
+  const clock =
+    room.settings.turnTimerSeconds === null
+      ? ` The turn timer is off, so they get ${FORCED_TURN_SECONDS} seconds a turn, then check or fold.`
+      : '';
+  return `They're still in this hand, so they play it out.${clock} Then they're removed and their chips and any winnings are cashed out.`;
 }
 
 export function hostFailure({ code }: ErrorPayload, event: ClientEventName): string {
