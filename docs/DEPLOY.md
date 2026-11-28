@@ -66,3 +66,8 @@ npm run sandbox:down    # stops it and discards its rooms
 
 ## Protocol version rollout
 Web and server check a protocol version on connect; on a mismatch the app asks the user to reload. For the first release with this check, deploy web first, then the server. Tabs still running an older bundle have no reload screen and stay on "Reconnecting" until reloaded by hand.
+
+## Releasing and rolling back Stage E
+- Order: apply the migration `20261128000000_shared_recaps.sql` to production Supabase, then deploy web and server together (the protocol version changed).
+- **Roll the server back only when no rooms are live** (or after flushing Redis). Stored rooms now carry new fields, and an older server refuses a room it cannot read; ended games also lose their recap and share.
+- Undoing the migration: `select cron.unschedule('purge-shared-recaps'); drop table public.shared_recaps;`

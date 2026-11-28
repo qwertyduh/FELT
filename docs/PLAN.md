@@ -448,6 +448,9 @@ Legend: ⬜ not started · 🟨 in progress · ✅ done · ⏸ deferred · 👤 
 - **Done when:** screenshots open and closed at 375px; a highlight test with known hole + board cards.
 - _Note: GO on round 2 (round 1: the table button pushed two 320-375px layouts into scrolling). The button sits in the room header rather than floating (PRD says floating), so it costs no card space; under 375px, Home shows as an arrow. Open: swipe untested on a real phone; at 320px a very wide name can cut the sheet's turn line._
 
+## Stage E review (2026-11-28)
+- _Opus review of Stage E and the Stage D fixes: GO for a game night; no chip error, card leak, admission bypass or RoomActor break. Not fixed: (1) rolling the server back with live rooms makes them unreadable (strict record schema; see DEPLOY.md, and consider a tolerant loader); (2) one throwing commit hook would skip the broadcast and timers (no trigger found); (3) TRUST_PROXY trusts every hop, so the public recap rate limit can be dodged; (4) the chat filter censors only the first of run-together words. Suggested next: tolerant loader, removed players seeing their last hand, a deadline on a pending end in hybrid._
+
 ---
 
 ## Stage F — Practice mode (client-side)

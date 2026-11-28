@@ -13,7 +13,7 @@ Private rooms only: the host approves every join, sets the minimum buy-in, and a
 - `DESIGN.md` is the superseded v1 plan. Don't follow it where it conflicts with `docs/`.
 
 ## Status
-Rebuild in progress on branch `rebuild`. Done: P01–P51 (foundation, auth, usernames, the pure poker engine, rooms, hybrid mode and online mode), plus a Leave button, host-set blind increases and review fixes. Test files stay local, so CI does not run them. Next: P52 (Stage E). Check `docs/PLAN.md` for the per-phase status and notes. The commands below are the working ones; `npm run e2e` runs the Playwright suite (needs local Supabase, Redis and the server). `npm run sandbox:up` then `npm run e2e:sandbox` runs it against the Docker-built server (see docs/DEPLOY.md).
+Rebuild in progress on branch `rebuild`. Done: P01–P56 (foundation, auth, usernames, the pure poker engine, rooms, hybrid mode, online mode, recap, chat and hand rankings), plus a Leave button, host-set blind increases and review fixes. Test files stay local, so CI does not run them. Next: P57 (Stage F, practice mode). Check `docs/PLAN.md` for the per-phase status and notes. The commands below are the working ones; `npm run e2e` runs the Playwright suite (needs local Supabase, Redis and the server). `npm run sandbox:up` then `npm run e2e:sandbox` runs it against the Docker-built server (see docs/DEPLOY.md).
 
 ## Layout (npm workspaces)
 - `apps/web`: Vite + React + TS + Tailwind + Zustand PWA (Vercel)
